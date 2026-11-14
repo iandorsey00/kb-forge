@@ -1,0 +1,41 @@
+{
+  "identifiers": {
+    "prefix": "FIELD",
+    "separator": "-",
+    "digits": 6,
+    "start": 1
+  },
+  "languages": [
+    "en-US",
+    "zh-CN"
+  ],
+  "branding": {
+    "name": "Northshore Field Services",
+    "color": "#16564c",
+    "logo": "northshore-mark.png"
+  },
+  "templates": {
+    "troubleshooting": {
+      "label": "Troubleshooting",
+      "sections": [
+        "Symptoms",
+        "Procedure",
+        "Verification"
+      ]
+    },
+    "procedure": {
+      "label": "Procedure",
+      "sections": [
+        "Purpose",
+        "Steps"
+      ]
+    },
+    "procedure-zh": {
+      "label": "操作规程",
+      "sections": [
+        "目的",
+        "操作步骤"
+      ]
+    }
+  }
+}

@@ -1,0 +1,59 @@
+# KB Forge
+
+English · [简体中文](README.zh-CN.md)
+
+KB Forge is a planned toolkit for creating, organizing, validating, and publishing portable knowledge bases. Articles use Markdown with YAML front matter, and images and attachments are stored as ordinary files. The same collection should remain readable and maintainable with ordinary tools if an organization replaces KB Forge.
+
+## Documentation
+
+English and Simplified Chinese (`zh-CN`) documentation are required for the MVP and for each release that changes a documented workflow. Both editions should be complete, easy to navigate, and linked to each other. Update both editions in the same change when behavior, configuration, or the standard changes.
+
+The documentation should include:
+
+- **Documentation standard.** A dedicated, versioned specification that explains the directory layout, metadata fields and allowed values, permanent IDs and organization-defined prefixes, asset naming and placement, relative links, article relationships, translations, regional applicability, and the article lifecycle. Identify required rules, configurable defaults, and examples. Include a complete article and its assets that readers can inspect in a Markdown editor.
+- **Getting started and authoring.** Installation and setup, followed by a walkthrough of creating an article, adding an image, finding the article by metadata, fixing a validation finding, previewing the branded article, and exporting a PDF.
+- **Configuration and maintenance.** Examples for configuring IDs, metadata, templates, validation, and branding. Explain review and translation updates, common validation failures, and how to use and maintain the collection with ordinary tools.
+
+Keep commands, YAML keys, and identifiers consistent across editions. Translate the explanations, headings, captions, and other reader-facing text. Before release, follow the walkthrough in both languages, check example files and links, and verify that the Chinese sample renders legibly in HTML and PDF.
+
+This requirement applies to KB Forge's own documentation and its demonstration. Organizations can choose which languages to support in their collections, and individual articles may have a single language edition.
+
+## Run the MVP
+
+Install Python 3.11 or later and Pandoc, and make sure both are available on your PATH. Use a current Chromium browser for PDF export. No Python packages or cloud accounts are required.
+
+From the repository root, make a working copy of the demo. The application writes changes to the collection you open.
+
+```sh
+cp -R example demo-work
+python3 -m kbforge demo-work
+```
+
+In Windows PowerShell, use `Copy-Item -Recurse example demo-work` and `py -m kbforge demo-work`. Open [http://127.0.0.1:8765](http://127.0.0.1:8765). Stop the application with Ctrl+C. Use `--port 8766` if the default port is busy.
+
+### Try the demo
+
+1. Open **New article**. Choose **Procedure**, keep **New article** as the source, enter a title and owner, and set a future review date. Enter a distinctive tag such as `demo-cable`. Select **Create draft**. On a fresh copy, the new ID is `FIELD-000005`.
+2. Add text under **Purpose** and **Steps**, and select **Save changes**. Reopen **Edit**, choose a PNG or JPEG, describe it, and select **Add image**. The editor adds the relative Markdown reference at the end. Move it in the Markdown if it belongs under a different step.
+3. In **Catalog**, search for `demo-cable`. Open the article to check the branding and image. Use **Validation** to find problems. The supplied incomplete practice draft intentionally has a missing owner, a missing section and image, and an overdue review.
+4. Select **Publish**, then **Print or save as PDF**. In Chromium, choose **Save as PDF**, turn off the browser's own headers and footers, and check the preview before saving. The print stylesheet supplies A4 margins, page numbers, and the branded title block. Try the Chinese edition of `FIELD-000001` to check the characters and screenshot. Install a Simplified Chinese system font if the print preview shows missing glyphs.
+5. In a text editor, open `demo-work/articles/FIELD-000005/en-US.md` and inspect its front matter and relative image link. Open the PNG or JPEG in the article's `assets` folder directly.
+
+Run repository validation without the browser with `python3 -m kbforge demo-work --validate`. Exit code 1 indicates errors. Run the automated tests with `python3 -m unittest discover -s tests`.
+
+## Reference
+
+Read the [KB Forge Documentation Standard](docs/standard.md) for file layout, metadata, lifecycle, translation and migration. The [demo collection](example/kbforge.yaml) shows the identifier format, article templates and organization branding.
+
+The MVP runs on loopback and is intended for one local operator per collection. The browser interface is in English. PDF export uses the browser's print dialog. See the standard for local allocation, Markdown, and import limits.
+
+### Publish a paginated branded PDF
+
+On macOS, Windows, or Linux, install the optional dependencies into the Python environment used to run KB Forge:
+
+```sh
+python3 -m pip install -r requirements-pdf.txt
+python3 -m kbforge demo-work --export-pdf FIELD-000002 en-US --output article.pdf
+```
+
+You can also use **Publish → Open branded PDF**. See the [publishing settings](docs/standard.md#branded-publishing) for cover art, page artwork, and Chinese fonts. Paginated export supports headings, paragraphs, lists, code blocks, and local images. Browser print remains available for Markdown tables and rich inline formatting.
