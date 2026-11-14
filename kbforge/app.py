@@ -13,6 +13,7 @@ import shutil
 import sys
 from urllib.parse import parse_qs, urlsplit
 
+from .theme import export_theme, import_theme
 from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, theme_asset
 from .publishing import article_url, branded_article, esc, image_data
 from .repository import LIST_FIELDS, STATUSES, Repository, load_article, save_article
@@ -568,20 +569,33 @@ def main():
         "collection", type=Path, help="Path to the collection directory"
     )
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument(
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument(
         "--validate", action="store_true", help="Validate the collection and exit"
     )
-    parser.add_argument("--export-pdf", nargs=2, metavar=("ID", "LANGUAGE"))
+    actions.add_argument("--export-pdf", nargs=2, metavar=("ID", "LANGUAGE"))
     parser.add_argument("--output", type=Path, help="Output path for --export-pdf")
+    actions.add_argument(
+        "--export-theme", type=Path, metavar="ZIP", help="Export branding and layout"
+    )
+    actions.add_argument(
+        "--import-theme", type=Path, metavar="ZIP", help="Apply branding and layout"
+    )
     args = parser.parse_args()
     if bool(args.export_pdf) != bool(args.output):
         parser.error("--export-pdf and --output must be used together.")
-    if args.validate and args.export_pdf:
-        parser.error("Use --validate or --export-pdf separately.")
-    if not shutil.which("pandoc"):
+    if not (args.export_theme or args.import_theme) and not shutil.which("pandoc"):
         parser.error("Pandoc is required and must be on PATH.")
     try:
         repo = Repository(args.collection)
+        if args.export_theme:
+            export_theme(repo, args.export_theme)
+            print(args.export_theme)
+            return 0
+        if args.import_theme:
+            import_theme(repo, args.import_theme)
+            print(f"Applied theme to {repo.root}")
+            return 0
         if args.export_pdf:
             import os
             import tempfile

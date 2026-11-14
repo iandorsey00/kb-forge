@@ -57,3 +57,23 @@ python3 -m kbforge demo-work --export-pdf FIELD-000002 en-US --output article.pd
 ```
 
 也可以在 **Publish → Open branded PDF** 中查看结果。有关封面、品牌图片和中文字体，请参阅[发布设置](docs/standard.zh-CN.md#品牌样式与发布)。分页导出支持标题、段落、列表、代码块和本地图片。可通过浏览器打印保留 Markdown 表格及丰富的行内样式。
+
+### 将主题迁移到另一个知识库
+
+1. 在源电脑的 KB Forge 项目目录中导出主题。请使用尚不存在的 ZIP 文件名。
+
+   ```sh
+   python3 -m kbforge my-collection --export-theme my-theme.zip
+   ```
+
+2. 将 ZIP 复制到目标电脑。在已更新的 KB Forge 项目目录中使用现有知识库，或将附带的 `example` 目录复制为 `work-collection`。
+3. 如果目标知识库正在运行，请先停止 KB Forge，然后导入主题并重新启动。
+
+   ```sh
+   python3 -m kbforge work-collection --import-theme my-theme.zip
+   python3 -m kbforge work-collection
+   ```
+
+在 Windows PowerShell 中，可用 `py` 代替 `python3`，并通过 `Copy-Item -Recurse example work-collection` 复制示例知识库。如果 ZIP 位于其他目录，请填写实际路径。
+
+ZIP 包含 `workspace`、`branding` 和 `publishing` 设置及其引用的资源。文章、编号、模板和文章专用 PDF 封面保留在各自的知识库中。如需备份目标主题，请先将其导出到另一个 ZIP。导入会替换这三个设置区块；若已有同名但内容不同的资源，导入会在更新设置前停止。

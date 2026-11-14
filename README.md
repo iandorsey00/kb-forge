@@ -57,3 +57,23 @@ python3 -m kbforge demo-work --export-pdf FIELD-000002 en-US --output article.pd
 ```
 
 You can also use **Publish → Open branded PDF**. See the [publishing settings](docs/standard.md#branded-publishing) for cover art, page artwork, and Chinese fonts. Paginated export supports headings, paragraphs, lists, code blocks, and local images. Browser print remains available for Markdown tables and rich inline formatting.
+
+### Move a theme to another collection
+
+1. From the source KB Forge checkout, export the collection theme. Use a new ZIP filename.
+
+   ```sh
+   python3 -m kbforge my-collection --export-theme my-theme.zip
+   ```
+
+2. Copy the ZIP to the destination computer. In an up-to-date KB Forge checkout, use an existing collection or copy the included `example` directory to `work-collection`.
+3. Stop KB Forge if it is serving the destination collection, then import the ZIP and start it again.
+
+   ```sh
+   python3 -m kbforge work-collection --import-theme my-theme.zip
+   python3 -m kbforge work-collection
+   ```
+
+In Windows PowerShell, use `py` in place of `python3` and `Copy-Item -Recurse example work-collection` to copy the sample. Insert the actual path to the ZIP if it is stored elsewhere.
+
+The ZIP contains the `workspace`, `branding`, and `publishing` settings and the assets those sections reference. Articles, numbering, templates, and article-specific PDF covers stay with their collections. Export the destination theme to a separate ZIP first if you want a backup of its settings. Import replaces the three theme sections and stops before updating them if an existing asset has the same name and different contents.
