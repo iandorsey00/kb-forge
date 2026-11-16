@@ -21,6 +21,7 @@ MAX_BYTES = 64 * 1024 * 1024
 
 
 def asset_names(settings):
+    """Collect only assets explicitly referenced by the portable theme settings."""
     names = set()
     for section, fields in ASSETS.items():
         values = settings.get(section, {})
@@ -44,6 +45,7 @@ def asset_names(settings):
 
 
 def export_theme(repo, destination):
+    """Write a fresh archive containing appearance settings and their assets."""
     settings = {key: repo.config[key] for key in SECTIONS if key in repo.config}
     names = asset_names(settings)
     manifest = json.dumps(
@@ -62,6 +64,7 @@ def export_theme(repo, destination):
 
 
 def import_theme(repo, source):
+    """Apply a theme bundle after checking its manifest and all asset conflicts."""
     try:
         with ZipFile(source) as archive:
             members = archive.namelist()
@@ -85,6 +88,7 @@ def import_theme(repo, source):
                     "Theme ZIP must contain exactly the assets listed in its settings."
                 )
             assets = {name: archive.read(f"branding/{name}") for name in sorted(names)}
+            # Read named members as bytes. The archive never chooses extraction paths.
     except (BadZipFile, RuntimeError) as error:
         raise ValueError("Could not read theme ZIP.") from error
 
@@ -106,6 +110,7 @@ def import_theme(repo, source):
                 with target.open("xb") as stream:
                     created.append(target)
                     stream.write(data)
+        # Activate the theme only after all of its assets are in place.
         write_json(config_path, config)
     except OSError:
         for target in created:

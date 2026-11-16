@@ -22,6 +22,7 @@ LIST_FIELDS = ("products", "categories", "regions", "countries", "tags")
 
 
 def atomic_text(path, content):
+    """Replace a file after its complete contents are staged on the same filesystem."""
     fd, temporary = tempfile.mkstemp(dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
@@ -36,6 +37,7 @@ def write_json(path, data):
 
 
 def read_mapping(text):
+    """Read the JSON-compatible subset of YAML used by the collection standard."""
     def unique_keys(pairs):
         result = {}
         for key, value in pairs:
@@ -133,6 +135,7 @@ class Repository:
         return self.path("articles", article_id, language + ".md")
 
     def scan(self):
+        """Yield editions and their parse errors so one bad file cannot hide its peers."""
         for path in sorted(self.path("articles").glob("*/*.md")):
             try:
                 path = self.path("articles", path.parent.name, path.name)
@@ -142,6 +145,7 @@ class Repository:
                 yield path, {}, "", str(error)
 
     def reserve_id(self):
+        """Reserve a permanent ID before creating any article files."""
         config = self.config["identifiers"]
         registry = self.path("registry")
         registry.mkdir(exist_ok=True)
@@ -161,6 +165,7 @@ class Repository:
                 else {}
             )
             used = set(entries)
+            # Keep retired IDs reserved and avoid collisions with unregistered articles.
             for path, metadata, _, _ in self.scan():
                 used.add(path.parent.name)
                 if isinstance(metadata.get("id"), str):
@@ -281,6 +286,7 @@ class Repository:
             )
             reservations = {}
         for path, metadata, _, error in articles:
+        # Index all editions before checking references and translation relationships.
             if error:
                 report("Error", path, f"Fix the front matter: {error}")
                 continue

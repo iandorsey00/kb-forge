@@ -9,6 +9,7 @@ upload?.addEventListener("submit", event => {
         status.textContent = "Choose an image up to 8 MiB.";
         return;
     }
+    // Encode the upload for the same URL-encoded form parser used by text fields.
     const reader = new FileReader();
     reader.onerror = () => { status.textContent = "Could not read the selected file."; };
     reader.onload = () => {

@@ -1,6 +1,7 @@
 """Build a paginated PDF using the collection's declarative theme."""
 
 import json
+import re
 from pathlib import Path
 from importlib.util import find_spec
 
@@ -21,6 +22,7 @@ IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
 
 def pdf_theme(repo, metadata):
+    """Resolve a collection theme, applying the article-specific cover if present."""
     settings = repo.config.get("publishing", {})
     assets = {}
     for key in ("cover_image", "header_image", "footer_image"):
@@ -35,6 +37,71 @@ def pdf_theme(repo, metadata):
     if type(depth) is not int or not 0 <= depth <= 6:
         raise ValueError("Publishing toc_depth must be an integer from 0 to 6.")
     return {**assets, "paper": size, "toc_depth": depth}
+
+
+COVER_IMAGES = {"logo", "cover_image", "header_image", "footer_image"}
+COVER_FIELDS = {
+    "title",
+    "id",
+    "revision",
+    "updated_on",
+    "owner",
+    "status",
+    "language",
+    "organization",
+}
+
+
+def cover_layout(settings):
+    """Validate percentage-based cover boxes independently of the PDF engine."""
+    if "cover_layout" not in settings:
+        return None
+    layout = settings["cover_layout"]
+    if not isinstance(layout, list) or not 1 <= len(layout) <= 50:
+        raise ValueError("publishing.cover_layout must contain 1 to 50 elements.")
+    for index, box in enumerate(layout, 1):
+
+        def fail(message):
+            return ValueError(f"Cover element {index}: {message}")
+
+        if not isinstance(box, dict):
+            raise fail("expected an object.")
+        sources = box.keys() & {"image", "field", "text"}
+        if len(sources) != 1:
+            raise fail("specify one of image, field, or text.")
+        source = next(iter(sources))
+        value = box[source]
+        if not isinstance(value, str) or not value.strip():
+            raise fail("the image, field, or text must be a nonempty string.")
+        if source == "image" and value not in COVER_IMAGES:
+            raise fail("unknown image role.")
+        if source == "field" and value not in COVER_FIELDS:
+            raise fail("unknown metadata field.")
+        allowed = {source, "x", "y", "width", "height", "align"}
+        if source != "image":
+            allowed |= {"size", "bold", "color"}
+        if box.keys() - allowed:
+            raise fail("unknown element settings.")
+        coordinates = [box.get(key) for key in ("x", "y", "width", "height")]
+        if any(
+            type(number) not in (int, float) or not 0 <= number <= 100
+            for number in coordinates
+        ):
+            raise fail("x, y, width and height must be percentages between 0 and 100.")
+        x, y, width, height = coordinates
+        if not width or not height or x + width > 100 or y + height > 100:
+            raise fail("the box must have positive dimensions and fit on the page.")
+        if box.get("align", "left") not in ("left", "center", "right"):
+            raise fail("align must be left, center, or right.")
+        size = box.get("size", 12)
+        if type(size) not in (int, float) or not 4 <= size <= 144:
+            raise fail("size must be between 4 and 144 points.")
+        if type(box.get("bold", False)) is not bool:
+            raise fail("bold must be true or false.")
+        color = box.get("color", "#202020")
+        if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+            raise fail("color must be a six-digit hex color.")
+    return layout
 
 
 def inline(nodes):
@@ -60,6 +127,7 @@ def inline(nodes):
 
 
 def pdf_blocks(repo, path, blocks):
+    """Adapt Pandoc nodes into the blocks the paginated renderer supports."""
     for node in blocks:
         kind, value = node["t"], node.get("c")
         if kind == "Header":
@@ -99,11 +167,13 @@ def pdf_blocks(repo, path, blocks):
                 (None, value) if kind == "BulletList" else (value[0][0], value[1])
             )
             for index, item in enumerate(items):
-                prefix = "•  " if start is None else f"{start + index}.  "
+                marker = "•" if start is None else f"{start + index}."
                 for entry in pdf_blocks(repo, path, item):
-                    if entry["kind"] == "text" and prefix:
-                        entry["text"] = prefix + entry["text"]
-                        prefix = ""
+                    entry["list_depth"] = entry.get("list_depth", 0) + 1
+                    # Only the first paragraph at this level receives the item marker.
+                    if entry["kind"] == "text" and marker and entry["list_depth"] == 1:
+                        entry["marker"] = marker
+                        marker = ""
                     yield entry
         elif kind in ("BlockQuote", "Div"):
             yield from pdf_blocks(
@@ -118,6 +188,7 @@ def pdf_blocks(repo, path, blocks):
 
 
 def pdf_available():
+    """Keep HTML publishing usable when the optional PDF dependencies are absent."""
     return all(find_spec(module) is not None for module in ("reportlab", "pypdf"))
 
 
@@ -137,5 +208,8 @@ def export_pdf(repo, path):
     settings = repo.config.get("publishing", {})
     if settings.get("font"):
         theme["font"] = str(theme_asset(repo, settings["font"], {".ttf", ".ttc"}))
+    if not theme.get("cover_pdf"):
+        theme["cover_layout"] = cover_layout(settings)
+    theme["organization"] = repo.config["branding"].get("name", "")
     blocks = list(pdf_blocks(repo, path, json.loads(pandoc(body, "json"))["blocks"]))
     return render_pdf(metadata, theme, blocks)

@@ -27,6 +27,7 @@ class WorkflowTest(unittest.TestCase):
         server = SimpleNamespace(server_port=8765, write_lock=threading.Lock())
 
         class InMemoryHandler(Handler):
+            """Exercise actual HTTP parsing and routing without opening a socket."""
             def setup(self):
                 self.rfile = BytesIO(self.request)
                 self.wfile = BytesIO()

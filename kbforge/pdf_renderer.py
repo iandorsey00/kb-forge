@@ -10,6 +10,7 @@ from xml.sax.saxutils import escape
 
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import A4, LETTER
 from reportlab.lib.styles import ParagraphStyle
@@ -35,6 +36,7 @@ MUTED = HexColor("#555555")
 
 
 def document_fonts(theme, text):
+    """Select fonts with the needed glyphs and register embedded fonts once per process."""
     configured = theme.get("font") or os.environ.get("KBFORGE_PDF_FONT")
     if not configured and not re.search(r"[\u2e80-\u9fff]", text):
         return "Helvetica", "Helvetica-Bold"
@@ -129,9 +131,65 @@ class Publication(BaseDocTemplate):
         canvas.drawImage(image, x, top - h * scale, w * scale, h * scale, mask="auto")
         return h * scale
 
+    def draw_custom_cover(self, canvas, layout):
+        """Draw boxes measured from the page's top-left corner."""
+        page_width, page_height = self.pagesize
+        for index, box in enumerate(layout, 1):
+            x, width = (box[key] * page_width / 100 for key in ("x", "width"))
+            y, height = (box[key] * page_height / 100 for key in ("y", "height"))
+            top = page_height - y
+            align = box.get("align", "left")
+            if "image" in box:
+                asset = self.theme.get(box["image"])
+                if not asset:
+                    continue
+                image = ImageReader(asset)
+                image_width, image_height = image.getSize()
+                scale = min(width / image_width, height / image_height)
+                fitted_width = image_width * scale
+                offset = {
+                    "left": 0,
+                    "center": (width - fitted_width) / 2,
+                    "right": width - fitted_width,
+                }[align]
+                canvas.drawImage(
+                    image,
+                    x + offset,
+                    top - image_height * scale,
+                    fitted_width,
+                    image_height * scale,
+                    mask="auto",
+                )
+                continue
+            text = cover_text(self.metadata, self.theme, box)
+            if not text:
+                continue
+            size = box.get("size", 12)
+            parent = self.styles["title" if box.get("bold") else "body"]
+            style = ParagraphStyle(
+                "cover element",
+                parent=parent,
+                fontSize=size,
+                leading=size * 1.2,
+                textColor=HexColor(box.get("color", "#202020")),
+                alignment={"left": TA_LEFT, "center": TA_CENTER, "right": TA_RIGHT}[
+                    align
+                ],
+            )
+            paragraph = Paragraph(escape(text).replace("\n", "<br/>"), style)
+            _, text_height = paragraph.wrap(width, height)
+            if text_height > height + 0.01:
+                raise ValueError(
+                    f"Cover element {index} text does not fit. Increase its height or reduce its font size."
+                )
+            paragraph.drawOn(canvas, x, top - text_height)
+
     def draw_page(self, canvas, doc):
         width, height = self.pagesize
         if doc.page == 1 and self.theme.get("cover_pdf"):
+            return
+        if doc.page == 1 and self.theme.get("cover_layout"):
+            self.draw_custom_cover(canvas, self.theme["cover_layout"])
             return
         margin, unit = self.margin, self.unit
         self.artwork(canvas, "header_image", 0, height, width, height * 0.055)
@@ -182,6 +240,7 @@ class Publication(BaseDocTemplate):
         canvas.drawRightString(width - margin, height * 0.064, page)
 
     def afterFlowable(self, flowable):
+        # Record the heading destination after pagination gives it a page number.
         entry = getattr(flowable, "toc_entry", None)
         if entry:
             level, destination, title = entry
@@ -218,18 +277,51 @@ def make_story(doc, blocks, depth):
             if level
             else ("code" if kind == "code" else "body")
         )
-        node = (XPreformatted if kind == "code" else Paragraph)(
-            escape(text), doc.styles[key]
-        )
+        style = doc.styles[key]
+        list_depth = block.get("list_depth", 0)
+        marker = block.get("marker")
+        if list_depth:
+            # Draw the marker in the gutter and align wrapped lines with the item text.
+            indent = 12 * min(list_depth, 5) * doc.unit
+            marker_width = pdfmetrics.stringWidth(
+                marker or "•", style.fontName, style.fontSize
+            )
+            style = ParagraphStyle(
+                "list-item",
+                parent=style,
+                bulletFontName=style.fontName,
+                bulletFontSize=style.fontSize,
+                bulletIndent=indent,
+                leftIndent=indent + max(14 * doc.unit, marker_width + 5 * doc.unit),
+            )
+        if kind == "code":
+            node = XPreformatted(escape(text), style)
+        else:
+            node = Paragraph(escape(text), style, bulletText=marker)
         if 0 < level <= depth:
             node.toc_entry = (max(0, level - 2), f"section-{index}", text)
         flow.append(node)
     return flow
 
 
+def cover_text(metadata, theme, box):
+    if "image" in box:
+        return ""
+    if "text" in box:
+        return box["text"]
+    field = box["field"]
+    value = (
+        theme.get("organization") if field == "organization" else metadata.get(field)
+    )
+    return "" if value is None else str(value)
+
+
 def render_pdf(metadata, theme, blocks):
     chinese = str(metadata.get("language", "")).lower().startswith("zh")
     text = str(metadata["title"]) + "".join(block["text"] for block in blocks)
+    text += "".join(
+        cover_text(metadata, theme, box) for box in theme.get("cover_layout") or []
+    )
     fonts = document_fonts(theme, text + ("目录修订版第页" if chinese else ""))
     cover = None
     size = LETTER if theme["paper"] == "Letter" else A4
@@ -276,6 +368,7 @@ def render_pdf(metadata, theme, blocks):
             ]
         )
     story.extend(flow or [Spacer(1, 1)])
+    # Reflow until the contents entries and page numbers agree.
     doc.multiBuild(story)
     if cover is None:
         return stream.getvalue()

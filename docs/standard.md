@@ -80,3 +80,22 @@ The HTML view displays the collection artwork and an HTML title block. To see an
 The optional `workspace` object controls the KB Forge interface. Set `name`, an optional `logo` filename under `branding/`, and `accent`, `navigation`, and `background` as six-digit hex colors. Use dark accent and navigation colors for white labels and a light background for dark text. The existing `branding` and `publishing` settings continue to control articles.
 
 Use `publishing.font` to name a TrueType font file (`.ttf` or `.ttc`) under `branding/`, or set the local `KBFORGE_PDF_FONT` environment variable to an absolute path. KB Forge embeds the glyphs it uses. For Chinese documents it also tries Arial Unicode on macOS, Microsoft YaHei on Windows, and WenQuanYi Zen Hei on Linux. If those are unavailable, configure a CJK TrueType font with the required glyphs.
+
+### Custom PDF cover layout
+
+Set `publishing.cover_layout` in `kbforge.yaml` to place elements on the generated cover. Each element has a bounding box. Set `x` and `y` as percentages from the left and top edges of the page and `width` and `height` as percentages of page size.
+
+```json
+"cover_layout": [
+  {"image": "logo", "x": 72, "y": 8, "width": 18, "height": 7, "align": "right"},
+  {"field": "title", "x": 10, "y": 21, "width": 80, "height": 18, "size": 28, "bold": true},
+  {"image": "cover_image", "x": 10, "y": 43, "width": 80, "height": 35, "align": "center"},
+  {"field": "updated_on", "x": 10, "y": 88, "width": 80, "height": 5, "size": 11}
+]
+```
+
+- Use `image` with `logo`, `cover_image`, `header_image`, or `footer_image`. Images retain their proportions. Unconfigured images are skipped.
+- Use `field` with `title`, `id`, `revision`, `updated_on`, `owner`, `status`, `language`, or `organization`. Use `text` for literal text. Optional text settings are `size` in points (default 12), `bold` (default false), and a six-digit hex `color` (default `#202020`).
+- Alignment is `left`, `center`, or `right`. Elements start at the top of their boxes and are drawn in list order. Export reports text that exceeds its box.
+
+A custom layout draws only the specified elements on the cover. Omit it to use the built-in cover. An article's `cover_pdf` takes precedence. The layout travels with a theme ZIP. Restart KB Forge after changing collection settings, then use **Open branded PDF** to preview the cover.

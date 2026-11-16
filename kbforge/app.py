@@ -113,6 +113,7 @@ class Handler(BaseHTTPRequestHandler):
         return f'<input type="hidden" name="_token" value="{self.token}">'
 
     def dispatch(self, method):
+        # Check the Host header as well as binding to loopback to reject DNS rebinding.
         if self.headers.get("Host") != f"127.0.0.1:{self.server.server_port}":
             self.send_error(400, "Use the local address printed at startup.")
             return
@@ -120,6 +121,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             params = parse_qs(target.query, max_num_fields=60)
             if method == "POST":
+                # Keep form mutations tied to this server process and bound upload size.
                 size = int(self.headers.get("Content-Length", "0"))
                 if not 0 < size <= 12 * 1024 * 1024:
                     raise ValueError("The form is empty or exceeds the upload limit.")
@@ -467,6 +469,7 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def edit(self, values):
+        """Reject stale editor tabs so a save cannot silently overwrite a newer edit."""
         path = self.path_from(values)
         with self.server.write_lock:
             if hashlib.sha256(path.read_bytes()).hexdigest() != values.get(
@@ -499,10 +502,12 @@ class Handler(BaseHTTPRequestHandler):
             ):
                 updates["revision"] = metadata["revision"] + 1
                 updates["updated_on"] = date.today().isoformat()
+                # Preserve organization-defined fields that the editor does not expose.
                 save_article(path, {**metadata, **updates}, new_body)
         self.redirect(article_url(path))
 
     def upload(self, values):
+        """Store the image and add its Markdown reference in one serialized edit."""
         path = self.path_from(values)
         alt = " ".join(values.get("alt", "").split())
         if not alt:

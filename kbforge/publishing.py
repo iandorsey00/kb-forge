@@ -21,6 +21,7 @@ def article_url(path, page="article"):
 
 
 def image_data(path):
+    """Embed a supported local image so the browser needs no separate asset request."""
     mime = mimetypes.guess_type(path.name)[0]
     if mime not in ("image/png", "image/jpeg", "image/gif", "image/webp"):
         raise ValueError("Unsupported image format.")
@@ -32,6 +33,7 @@ def image_data(path):
 
 
 def render_body(repo, path, body):
+    """Rewrite local links and images at the AST level before generating HTML."""
     ast = json.loads(pandoc(body, "json"))
 
     def rewrite(value):

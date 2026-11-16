@@ -80,3 +80,22 @@ HTML 页面显示品牌图片和 HTML 标题区。在 **Publish**（发布）中
 可选的 `workspace` 对象控制 KB Forge 界面样式。可设置 `name`、`branding/` 下的可选 `logo` 文件名，以及六位十六进制颜色 `accent`、`navigation` 和 `background`。建议使用深色强调色和导航栏背景搭配白色文字，并使用浅色背景搭配深色正文。文章样式仍由 `branding` 和 `publishing` 控制。
 
 可通过 `publishing.font` 指定 `branding/` 下的 TrueType 字体文件（`.ttf` 或 `.ttc`），也可将本机环境变量 `KBFORGE_PDF_FONT` 设为字体的绝对路径。KB Forge 会嵌入所用字形。生成中文文档时，还会尝试 macOS 上的 Arial Unicode、Windows 上的微软雅黑及 Linux 上的文泉驿正黑。若这些字体不可用，请配置包含所需字形的中日韩 TrueType 字体。
+
+### 自定义 PDF 封面布局
+
+在 `kbforge.yaml` 中设置 `publishing.cover_layout`，即可自定义封面元素的位置。每个元素占一个矩形区域。坐标 `x`、`y` 分别是距页面左边和上边的百分比，`width`、`height` 分别是占页面宽度和高度的百分比。
+
+```json
+"cover_layout": [
+  {"image": "logo", "x": 72, "y": 8, "width": 18, "height": 7, "align": "right"},
+  {"field": "title", "x": 10, "y": 21, "width": 80, "height": 18, "size": 28, "bold": true},
+  {"image": "cover_image", "x": 10, "y": 43, "width": 80, "height": 35, "align": "center"},
+  {"field": "updated_on", "x": 10, "y": 88, "width": 80, "height": 5, "size": 11}
+]
+```
+
+- `image` 可使用 `logo`、`cover_image`、`header_image` 或 `footer_image`。图片保持原有比例。未配置的图像会跳过。
+- `field` 可使用 `title`、`id`、`revision`、`updated_on`、`owner`、`status`、`language` 或 `organization`。`text` 用于固定文字。文字可设置字号 `size`（单位为点，默认 12）、粗体 `bold`（默认关闭）和六位十六进制颜色 `color`（默认 `#202020`）。
+- `align` 可设置为 `left`、`center` 或 `right`。元素从各自区域的顶部开始，按列表顺序绘制。文字超出区域时，导出会提示调整布局。
+
+自定义封面只显示列表中的元素。省略此设置即可使用内置封面。文章的 `cover_pdf` 优先。主题 ZIP 包含封面布局。修改知识库配置后，请重启 KB Forge，然后通过 **Open branded PDF** 预览。
