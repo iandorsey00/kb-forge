@@ -77,3 +77,9 @@ You can also use **Publish → Open branded PDF**. See the [publishing settings]
 In Windows PowerShell, use `py` in place of `python3` and `Copy-Item -Recurse example work-collection` to copy the sample. Insert the actual path to the ZIP if it is stored elsewhere.
 
 The ZIP contains the `workspace`, `branding`, and `publishing` settings and the assets those sections reference. Articles, numbering, templates, and article-specific PDF covers stay with their collections. Export the destination theme to a separate ZIP first if you want a backup of its settings. Import replaces the three theme sections and stops before updating them if an existing asset has the same name and different contents.
+
+### Update from the app
+
+If you run KB Forge from a Git checkout, open **Updates → Check and install update**. KB Forge fetches the current branch's configured upstream and applies it only as a fast-forward. Finish any open article edits first. Commit or set aside local checkout changes before updating. Use Git directly to reconcile a branch with local-only commits.
+
+After an update, stop KB Forge with **Ctrl+C** and run your usual launch command again. If the update changes the optional PDF dependencies, rerun the installation command above. For a ZIP download, replace the application with a newer copy and open your existing collection from it.

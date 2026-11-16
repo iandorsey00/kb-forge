@@ -18,6 +18,8 @@ from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, theme_asset
 from .publishing import article_url, branded_article, esc, image_data
 from .repository import LIST_FIELDS, STATUSES, Repository, load_article, save_article
 
+from .update import update_checkout
+
 STYLE = Path(__file__).with_name("style.css")
 FIELDS = {
     "title": "Title",
@@ -104,7 +106,7 @@ class Handler(BaseHTTPRequestHandler):
 <title>{esc(title)} | {name}</title><link rel="stylesheet" href="/style.css">
 <body style="{";".join(css)}">
 <nav class="site" aria-label="Workspace"><strong><a href="/">{logo}{name}</a></strong>
-<a href="/catalog">Catalog</a><a href="/create">New article</a><a href="/validate">Validation</a></nav>
+<a href="/catalog">Catalog</a><a href="/create">New article</a><a href="/validate">Validation</a><a href="/updates">Updates</a></nav>
 <main>{body}</main><script src="/app.js" defer></script></body></html>""",
             status,
         )
@@ -145,6 +147,17 @@ class Handler(BaseHTTPRequestHandler):
                         403,
                     )
                     return
+            if getattr(self.server, "restart_required", False) and target.path not in (
+                "/updates",
+                "/style.css",
+                "/app.js",
+            ):
+                self.page(
+                    "Restart required",
+                    "<h1>Restart required</h1><p>Restart KB Forge to load the installed update.</p>",
+                    503,
+                )
+                return
             values = {key: items[0] for key, items in params.items()}
             route = {
                 ("GET", "/"): self.dashboard,
@@ -152,6 +165,8 @@ class Handler(BaseHTTPRequestHandler):
                 ("GET", "/create"): self.create_form,
                 ("POST", "/create"): self.create,
                 ("GET", "/validate"): self.validation,
+                ("GET", "/updates"): self.updates,
+                ("POST", "/updates"): self.apply_update,
                 ("GET", "/article"): self.article,
                 ("GET", "/edit"): self.edit_form,
                 ("POST", "/edit"): self.edit,
@@ -194,6 +209,40 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Location", location)
         self.send_header("Content-Length", "0")
         self.end_headers()
+
+    def updates(self, _):
+        self.page(
+            "Updates",
+            f"<h1>Update KB Forge</h1>"
+            "<p>Fetch and install the latest commit from this checkout’s configured upstream branch. "
+            "Save any open article edits before updating.</p>"
+            f'<form method="post" action="/updates">{self.form_token()}'
+            '<button type="submit">Check and install update</button></form>',
+        )
+
+    def apply_update(self, _):
+        with self.server.write_lock:
+            if getattr(self.server, "restart_required", False):
+                self.page(
+                    "Restart required",
+                    "<h1>Restart required</h1><p>Restart KB Forge to load the installed update.</p>",
+                )
+                return
+            result = update_checkout()
+            if result:
+                self.server.restart_required = True
+        if result:
+            before, after = result
+            self.page(
+                "Update installed",
+                f"<h1>Update installed</h1><p>Updated from {esc(before)} to {esc(after)}.</p>"
+                "<p>Stop KB Forge with Ctrl+C and run your launch command again to load the update.</p>",
+            )
+        else:
+            self.page(
+                "Up to date",
+                "<h1>Up to date</h1><p>This checkout matches its upstream branch.</p>",
+            )
 
     def dashboard(self, _):
         rows = catalog_rows(self.repo)

@@ -77,3 +77,9 @@ python3 -m kbforge demo-work --export-pdf FIELD-000002 en-US --output article.pd
 在 Windows PowerShell 中，可用 `py` 代替 `python3`，并通过 `Copy-Item -Recurse example work-collection` 复制示例知识库。如果 ZIP 位于其他目录，请填写实际路径。
 
 ZIP 包含 `workspace`、`branding` 和 `publishing` 设置及其引用的资源。文章、编号、模板和文章专用 PDF 封面保留在各自的知识库中。如需备份目标主题，请先将其导出到另一个 ZIP。导入会替换这三个设置区块；若已有同名但内容不同的资源，导入会在更新设置前停止。
+
+### 在应用中更新
+
+如果通过 Git 工作副本运行 KB Forge，请选择 **Updates → Check and install update**。KB Forge 会获取当前分支所跟踪的远程分支，并仅通过快进方式更新。更新前请保存打开的文章，并提交或暂存工作副本中的本地更改。如果当前分支含有上游没有的提交，请先通过 Git 处理。
+
+更新后按 **Ctrl+C** 停止 KB Forge，再运行平时使用的启动命令。如果更新修改了可选的 PDF 依赖，请重新运行上面的安装命令。如果使用的是 ZIP 下载版，请换用新版程序，并在新版中打开已有的知识库。
