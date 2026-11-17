@@ -30,6 +30,8 @@ from reportlab.platypus import (
 )
 from reportlab.platypus.tableofcontents import TableOfContents
 
+from .repository import article_author
+
 FONT_LOCK = Lock()
 INK = HexColor("#202020")
 MUTED = HexColor("#555555")
@@ -310,6 +312,8 @@ def cover_text(metadata, theme, box):
     if "text" in box:
         return box["text"]
     field = box["field"]
+    if field == "author":
+        return article_author(metadata)
     value = (
         theme.get("organization") if field == "organization" else metadata.get(field)
     )
@@ -322,7 +326,10 @@ def render_pdf(metadata, theme, blocks):
     text += "".join(
         cover_text(metadata, theme, box) for box in theme.get("cover_layout") or []
     )
-    fonts = document_fonts(theme, text + ("目录修订版第页" if chinese else ""))
+    author = article_author(metadata)
+    label = "作者：" if chinese else "Author: "
+    byline = label + author if author else ""
+    fonts = document_fonts(theme, text + byline + ("目录修订版第页" if chinese else ""))
     cover = None
     size = LETTER if theme["paper"] == "Letter" else A4
     if theme.get("cover_pdf"):
@@ -339,6 +346,8 @@ def render_pdf(metadata, theme, blocks):
 
     stream = BytesIO()
     doc = Publication(stream, size, metadata, theme, fonts, chinese)
+    if author:
+        doc.author = author
     depth = theme["toc_depth"]
     flow = make_story(doc, blocks, depth)
     story = [Spacer(1, 1), PageBreak()]
@@ -367,6 +376,15 @@ def render_pdf(metadata, theme, blocks):
                 PageBreak(),
             ]
         )
+    # Keep imported covers intact, and let an explicit author box place the byline.
+    if byline and (
+        cover is not None
+        or not any(
+            box.get("field") == "author" for box in theme.get("cover_layout") or []
+        )
+    ):
+        style = ParagraphStyle("byline", parent=doc.styles["body"], keepWithNext=True)
+        story.append(Paragraph(escape(byline), style))
     story.extend(flow or [Spacer(1, 1)])
     # Reflow until the contents entries and page numbers agree.
     doc.multiBuild(story)

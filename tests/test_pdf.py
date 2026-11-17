@@ -2,10 +2,13 @@
 
 from io import BytesIO
 from pathlib import Path
+import shutil
+from tempfile import TemporaryDirectory
 import unittest
 
 from kbforge.pdf import export_pdf, pdf_available
-from kbforge.repository import Repository
+from kbforge.publishing import export_html
+from kbforge.repository import Repository, load_article, save_article
 
 
 @unittest.skipUnless(pdf_available(), "Optional PDF dependencies are missing")
@@ -50,3 +53,35 @@ class PublishingTest(unittest.TestCase):
         repo.config["publishing"]["cover_layout"][0]["height"] = 0.1
         with self.assertRaisesRegex(ValueError, "Cover element 1 text does not fit"):
             export_pdf(repo, article)
+
+    def test_author_is_visible_and_written_to_pdf_properties(self):
+        from pypdf import PdfReader
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            collection = root / "collection"
+            shutil.copytree(Path(__file__).resolve().parents[1] / "example", collection)
+            repo = Repository(collection)
+            article = repo.article_path("FIELD-000002", "en-US")
+            metadata, body = load_article(article)
+            self.assertNotIn(
+                "Author:",
+                PdfReader(BytesIO(export_pdf(repo, article))).pages[2].extract_text(),
+            )
+            save_article(article, {**metadata, "author": "Alex & Casey"}, body)
+
+            site = root / "site"
+            export_html(repo, site)
+            html = (site / "FIELD-000002.en-US.html").read_text(encoding="utf-8")
+            self.assertIn("Author: Alex &amp; Casey", html)
+
+            pdf = PdfReader(BytesIO(export_pdf(repo, article)))
+            self.assertEqual(pdf.metadata.author, "Alex & Casey")
+            self.assertIn("Author: Alex & Casey", pdf.pages[2].extract_text())
+
+            repo.config.setdefault("publishing", {})["cover_layout"] = [
+                {"field": "author", "x": 10, "y": 20, "width": 80, "height": 10}
+            ]
+            pdf = PdfReader(BytesIO(export_pdf(repo, article)))
+            self.assertIn("Alex & Casey", pdf.pages[0].extract_text())
+            self.assertNotIn("Author:", pdf.pages[2].extract_text())

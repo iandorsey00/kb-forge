@@ -58,6 +58,12 @@ def read_mapping(text):
     return data
 
 
+def article_author(metadata):
+    """Return printable byline text for an optional article author."""
+    value = metadata.get("author")
+    return " ".join(value.split()) if isinstance(value, str) else ""
+
+
 def load_article(path):
     first, metadata, body = re.split(
         r"(?m)^---[ \t]*\n", path.read_text(encoding="utf-8"), maxsplit=2
@@ -299,7 +305,7 @@ class Repository:
                 continue
         raise ValueError("Too many images with that name.")
 
-    def validate(self):
+    def validate(self, *, only_id=None, reservations_override=None):
         from collections import Counter
         from urllib.parse import unquote, urlsplit
 
@@ -312,10 +318,17 @@ class Repository:
         findings = []
 
         def report(severity, path, message):
-            findings.append((severity, path.relative_to(self.root).as_posix(), message))
+            if only_id is None or path.is_relative_to(self.path("articles", only_id)):
+                findings.append(
+                    (severity, path.relative_to(self.root).as_posix(), message)
+                )
 
         try:
-            reservations = read_mapping(registry.read_text(encoding="utf-8"))
+            reservations = (
+                read_mapping(registry.read_text(encoding="utf-8"))
+                if reservations_override is None
+                else reservations_override
+            )
         except (OSError, ValueError) as error:
             report(
                 "Error",
@@ -336,7 +349,7 @@ class Repository:
                 editions[(article_id, language)] += 1
 
         for path, metadata, body, error in articles:
-            if error:
+            if error or (only_id is not None and path.parent.name != only_id):
                 continue
             article_id, language = metadata.get("id"), metadata.get("language")
             if (

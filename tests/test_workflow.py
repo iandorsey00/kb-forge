@@ -11,7 +11,10 @@ from urllib.parse import urlencode
 from types import SimpleNamespace
 
 from kbforge.app import Handler
+from kbforge.migrate import migrate_articles
+from kbforge.package import import_package
 from kbforge.publishing import export_html
+from kbforge.renumber import renumber
 from kbforge.repository import (
     Repository,
     initialize_collection,
@@ -180,3 +183,74 @@ class WorkflowTest(unittest.TestCase):
         self.assertFalse((destination / "FIELD-000004.en-US.html").exists())
         with self.assertRaises(FileExistsError):
             export_html(self.repo, destination)
+
+    def test_renumber_requires_force_and_preserves_editions(self):
+        old, new = "FIELD-000001", "SUPPORT-00001"
+        source = self.repo.article_path(old, "en-US")
+        pointing = self.repo.article_path("FIELD-000002", "en-US")
+        original = source.read_bytes()
+        self.assertIn(pointing, renumber(self.repo, old, new))
+        self.assertEqual(source.read_bytes(), original)
+        self.assertFalse(self.repo.article_path(new, "en-US").exists())
+
+        renumber(self.repo, old, new, force=True)
+        self.assertFalse(source.parent.exists())
+        for language in ("en-US", "zh-CN"):
+            metadata, _ = load_article(self.repo.article_path(new, language))
+            self.assertEqual(metadata["id"], new)
+            self.assertEqual(metadata["previous_ids"], [old])
+        self.assertTrue(
+            (self.repo.article_path(new, "en-US").parent / "assets").is_dir()
+        )
+        metadata, body = load_article(pointing)
+        self.assertEqual(metadata["related"], [new])
+        self.assertIn(f"../{new}/en-US.md", body)
+        with self.assertRaisesRegex(ValueError, "already in use or reserved"):
+            renumber(self.repo, new, old, force=True)
+
+    def test_import_article_package_validates_and_preserves_source(self):
+        source = self.root.parent / "article-package"
+        shutil.copytree(EXAMPLE / "articles/FIELD-000001", source)
+        for edition in source.glob("*.md"):
+            metadata, body = load_article(edition)
+            save_article(edition, {**metadata, "id": "IMPORT-00001"}, body)
+        imported, findings = import_package(self.repo, source)
+        self.assertEqual(imported, "IMPORT-00001")
+        self.assertFalse(any(item[0] == "Error" for item in findings))
+        edition = self.repo.article_path(imported, "zh-CN")
+        self.assertEqual(edition.read_bytes(), (source / edition.name).read_bytes())
+        self.assertTrue((edition.parent / "assets/input-selector.png").exists())
+        with self.assertRaisesRegex(ValueError, "already in use or reserved"):
+            import_package(self.repo, source)
+
+        before = self.repo.path("registry", "ids.yaml").read_bytes()
+        for edition in source.glob("*.md"):
+            metadata, body = load_article(edition)
+            save_article(edition, {**metadata, "id": "IMPORT-00002"}, body)
+        (source / "assets/input-selector.png").unlink()
+        with self.assertRaisesRegex(ValueError, "failed validation"):
+            import_package(self.repo, source)
+        self.assertFalse(self.repo.path("articles", "IMPORT-00002").exists())
+        self.assertEqual(self.repo.path("registry", "ids.yaml").read_bytes(), before)
+
+    def test_author_migration_previews_and_preserves_existing_content(self):
+        first = self.repo.article_path("FIELD-000001", "en-US")
+        second = self.repo.article_path("FIELD-000002", "en-US")
+        metadata, body = load_article(second)
+        save_article(second, {**metadata, "author": "Original Author"}, body)
+        existing = second.read_bytes()
+        original = first.read_bytes()
+        preview = migrate_articles(self.repo, "author", "New Author")
+        self.assertIn(first, preview)
+        self.assertNotIn(second, preview)
+        self.assertEqual(first.read_bytes(), original)
+
+        self.assertEqual(
+            migrate_articles(self.repo, "author", "New Author", force=True), preview
+        )
+        self.assertEqual(second.read_bytes(), existing)
+        self.assertEqual(
+            first.read_bytes().split(b"---", 2)[2], original.split(b"---", 2)[2]
+        )
+        self.assertEqual(load_article(first)[0]["author"], "New Author")
+        self.assertEqual(migrate_articles(self.repo, "author", "Other", force=True), [])

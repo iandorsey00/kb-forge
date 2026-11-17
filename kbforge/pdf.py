@@ -46,6 +46,7 @@ COVER_FIELDS = {
     "revision",
     "updated_on",
     "owner",
+    "author",
     "status",
     "language",
     "organization",

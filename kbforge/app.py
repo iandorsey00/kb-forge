@@ -13,6 +13,7 @@ import shutil
 import sys
 from urllib.parse import parse_qs, urlsplit
 
+from .package import import_package
 from .theme import export_theme, import_theme
 from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, theme_asset
 from .publishing import export_html, article_url, branded_article, esc, image_data
@@ -26,6 +27,8 @@ from .repository import (
 )
 
 from .update import update_checkout
+from .renumber import renumber
+from .migrate import MIGRATIONS, migrate_articles
 
 STYLE = Path(__file__).with_name("style.css")
 FIELDS = {
@@ -664,12 +667,42 @@ def main():
     actions.add_argument(
         "--import-theme", type=Path, metavar="ZIP", help="Apply branding and layout"
     )
+    actions.add_argument(
+        "--renumber",
+        nargs=2,
+        metavar=("OLD_ID", "NEW_ID"),
+        help="Preview an article ID migration",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Apply a previewed article migration"
+    )
+    actions.add_argument(
+        "--import-package",
+        type=Path,
+        metavar="DIRECTORY",
+        help="Import an article package",
+    )
+    actions.add_argument(
+        "--migrate",
+        metavar="NAME",
+        choices=sorted(MIGRATIONS),
+        help="Preview an article standards migration",
+    )
+    parser.add_argument("--author", help="Author value for the author migration")
     args = parser.parse_args()
+    if args.force and not (args.renumber or args.migrate):
+        parser.error("--force requires --renumber or --migrate.")
+    if (args.author is not None) != (args.migrate == "author"):
+        parser.error("--migrate author requires --author, and vice versa.")
     if bool(args.export_pdf or args.export_html) != bool(args.output):
         parser.error("--output is required for PDF and HTML export.")
-    if not (args.init or args.export_theme or args.import_theme) and not shutil.which(
-        "pandoc"
-    ):
+    if not (
+        args.init
+        or args.export_theme
+        or args.import_theme
+        or args.renumber
+        or args.migrate
+    ) and not shutil.which("pandoc"):
         parser.error("Pandoc is required and must be on PATH.")
     try:
         if args.init:
@@ -683,6 +716,37 @@ def main():
             print(f"Created {args.collection}")
             return 0
         repo = Repository(args.collection)
+        if args.migrate:
+            paths = migrate_articles(repo, args.migrate, args.author, force=args.force)
+            for path in paths:
+                print(path.relative_to(repo.root))
+            if args.force:
+                print(f"Migrated {len(paths)} article editions.")
+            else:
+                print(
+                    f"Preview only: {len(paths)} article editions would change. Rerun with --force to apply."
+                )
+            return 0
+        if args.import_package:
+            article_id, findings = import_package(repo, args.import_package)
+            for severity, path, message in findings:
+                print(f"{severity}\t{path}\t{message}")
+            print(f"Imported {article_id}")
+            return 0
+        if args.renumber:
+            old, new = args.renumber
+            changed = renumber(repo, old, new, force=args.force)
+            for path in changed:
+                print(path.relative_to(repo.root))
+            if args.force:
+                print(
+                    f"Renumbered {old} to {new}. Validate the collection and refresh its exports."
+                )
+            else:
+                print(
+                    f"Preview only: {old} → {new}. Stop KB Forge, back up the collection, then rerun with --force to apply."
+                )
+            return 0
         if args.export_html:
             export_html(repo, args.output)
             print(args.output / "index.html")

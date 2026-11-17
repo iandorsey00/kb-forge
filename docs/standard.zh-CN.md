@@ -23,6 +23,7 @@
 | `id` | 永久编号，与目录名一致。长度为 1 至 80 个字符，只能使用 ASCII 字母、数字、连字符和下划线，且以字母或数字开头。 |
 | `language` | 已配置的语言标签，例如 `en-US` 或 `zh-CN`，须与文件主名完全一致 |
 | `title`、`owner` | 必填的非空字符串 |
+| `author` | 可选作者姓名。HTML 在标题下方显示作者；PDF 默认在正文前显示，也可通过自定义封面指定位置。作者姓名也会写入 PDF 属性。 |
 | `type` | 必填，使用 `kbforge.yaml` 中的模板键 |
 | `status` | `draft`（草稿）、`published`（已发布）或 `retired`（已停用） |
 | `revision` | 正整数。修改对应语言版本时应递增。 |
@@ -68,6 +69,7 @@ KB Forge 通过本地文件系统上的独占锁分配编号。编号已分配�
 | --- | --- |
 | `branding.logo` | 已配置的知识库标识 |
 | `publishing.cover_image` | 自动生成封面时使用的图案。封面还会显示标题、编号、修订号和更新日期。 |
+| `publishing.html_cover_image` | 浏览器文章视图和静态 HTML 导出的可选封面图。省略时沿用 `cover_image`；设为 `null` 可在 HTML 中隐藏封面图。PDF 封面使用独立设置。 |
 | `publishing.header_image`、`publishing.footer_image` | 在分页 PDF 中重复显示的可选页眉、页脚图片，在 HTML 中各显示一次 |
 | `publishing.paper` | `A4`（默认）或 `Letter` |
 | `publishing.toc_depth` | PDF 可点击目录所包含的 Markdown 最深标题级别，范围为 0（关闭）至 6，默认为 2 |
@@ -77,7 +79,7 @@ HTML 页面显示品牌图片和 HTML 标题区。在 **Publish**（发布）中
 
 ### 工作区品牌样式与字体
 
-可选的 `workspace` 对象控制 KB Forge 界面样式。可设置 `name`、`branding/` 下的可选 `logo` 文件名，以及六位十六进制颜色 `accent`、`navigation` 和 `background`。建议使用深色强调色和导航栏背景搭配白色文字，并使用浅色背景搭配深色正文。文章样式仍由 `branding` 和 `publishing` 控制。
+可选的 `workspace` 对象控制 KB Forge 界面样式。可设置 `name`、`branding/` 下的可选 `logo` 文件名，以及六位十六进制颜色 `accent`、`navigation` 和 `background`。强调色用于主按钮背景、次要按钮边框和文字，以及链接。建议使用深色强调色和导航栏背景搭配白色文字，并使用浅色背景搭配深色正文。文章样式仍由 `branding` 和 `publishing` 控制。
 
 可通过 `publishing.font` 指定 `branding/` 下的 TrueType 字体文件（`.ttf` 或 `.ttc`），也可将本机环境变量 `KBFORGE_PDF_FONT` 设为字体的绝对路径。KB Forge 会嵌入所用字形。生成中文文档时，还会尝试 macOS 上的 Arial Unicode、Windows 上的微软雅黑及 Linux 上的文泉驿正黑。若这些字体不可用，请配置包含所需字形的中日韩 TrueType 字体。
 
@@ -95,7 +97,56 @@ HTML 页面显示品牌图片和 HTML 标题区。在 **Publish**（发布）中
 ```
 
 - `image` 可使用 `logo`、`cover_image`、`header_image` 或 `footer_image`。图片保持原有比例。未配置的图像会跳过。
-- `field` 可使用 `title`、`id`、`revision`、`updated_on`、`owner`、`status`、`language` 或 `organization`。`text` 用于固定文字。文字可设置字号 `size`（单位为点，默认 12）、粗体 `bold`（默认关闭）和六位十六进制颜色 `color`（默认 `#202020`）。
+- `field` 可使用 `title`、`id`、`revision`、`updated_on`、`owner`、`author`、`status`、`language` 或 `organization`。`text` 用于固定文字。文字可设置字号 `size`（单位为点，默认 12）、粗体 `bold`（默认关闭）和六位十六进制颜色 `color`（默认 `#202020`）。
 - `align` 可设置为 `left`、`center` 或 `right`。元素从各自区域的顶部开始，按列表顺序绘制。文字超出区域时，导出会提示调整布局。
 
 自定义封面只显示列表中的元素。省略此设置即可使用内置封面。文章的 `cover_pdf` 优先。主题 ZIP 包含封面布局。修改知识库配置后，请重启 KB Forge，然后通过 **Open branded PDF** 预览。
+
+### 手动迁移文章编号
+
+更改已分配的编号前，请停止 KB Forge 并备份知识库。在项目目录中先预览受影响的文件，再明确执行迁移：
+
+```sh
+python3 -m kbforge work-collection --renumber OLD-00001 NEW-00001
+python3 -m kbforge work-collection --renumber OLD-00001 NEW-00001 --force
+python3 -m kbforge work-collection --validate
+```
+
+工具会一并移动所有语言版本及共享资源，在各版本的 `previous_ids` 中记录旧编号，并保留新旧编号。它会更新 `related` 和文章间常规的 Markdown 相对链接。请另行检查自定义元数据和外部链接，并重新导出受影响的 PDF 或 HTML。
+
+## 文章包
+
+**文章包**是一个目录，包含同一篇文章的各语言版本和共享图片。其内容结构与 `articles/<id>/` 目录一致：
+
+```text
+my-article/
+  en-US.md
+  zh-CN.md
+  assets/
+    input-selector.png
+```
+
+- 至少包含一个 `<language>.md` 文件。每个版本都须遵循上述元数据规则，并使用目标知识库已配置的语言和文档类型。各版本须使用同一有效 `id`。文章包目录名可以与编号不同。包含译文时，也须包含源语言版本。
+- `assets/` 为可选目录，可包含符合命名规则的 PNG、JPG、GIF 或 WebP 图片，每张最多 8 MiB。请使用 `assets/input-selector.png` 等相对路径引用图片。包内只应包含文章版本和资源文件，且不支持符号链接。知识库级别的品牌资源须已安装在目标知识库中。
+- 目标知识库及其编号登记表中均不得已有该编号。如需为已有文章添加语言版本，请在该文章的目录中管理。
+
+请在导入前停止 KB Forge，并在项目目录中运行：
+
+```sh
+python3 -m kbforge work-collection --import-package /path/to/my-article
+```
+
+KB Forge 会根据目标知识库校验导入的文章及其引用，报告警告并登记文章编号。存在校验错误时会中止导入。源文章包仍可继续编辑或复用。新建文章的默认编号规则不影响文章包中指定的编号。
+
+## 知识库批量标准迁移
+
+标准变更时，可使用具名迁移升级现有文章文件。每项迁移均有明确的源文件转换规则。运行 `python3 -m kbforge --help` 可查看可用迁移。省略 `--force` 时，只会列出受影响的文章版本，不写入更改。
+
+`author` 迁移会用指定姓名填充缺失、为 null 或为空白的作者字段。已有署名、正文、文章编号和修订日期均会保留。仅当待署名文章均由同一作者撰写时使用。执行前请停止 KB Forge 并备份知识库。
+
+```sh
+python3 -m kbforge work-collection --migrate author --author "Example Author"
+python3 -m kbforge work-collection --migrate author --author "Example Author" --force
+```
+
+重新导出 HTML 和 PDF，即可更新已发布的副本。

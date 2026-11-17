@@ -8,8 +8,8 @@ from pathlib import Path
 import subprocess
 from urllib.parse import quote, unquote, urlencode, urlsplit
 
-from .pdf import pdf_theme
-from .repository import ASSET, load_article, pandoc
+from .pdf import IMAGE_SUFFIXES, pdf_theme, theme_asset
+from .repository import ASSET, article_author, load_article, pandoc
 
 
 def esc(value):
@@ -119,6 +119,11 @@ def branded_article(repo, path, link_for=article_url):
         logo_path = repo.path("branding", Path(brand["logo"]).name)
         logo = f'<img class="logo" src="{esc(image_data(logo_path))}" alt="">'
     chinese = str(metadata.get("language", "")).lower().startswith("zh")
+    author = article_author(metadata)
+    byline = ""
+    if author:
+        label = "作者：" if chinese else "Author: "
+        byline = f'<p class="document-control">{label}{esc(author)}</p>'
     labels = (
         ("修订版", "更新日期", "状态") if chinese else ("Revision", "Updated", "Status")
     )
@@ -157,6 +162,13 @@ def branded_article(repo, path, link_for=article_url):
             f"<aside><strong>{label}</strong> · " + " · ".join(related) + "</aside>"
         )
     theme = pdf_theme(repo, metadata)
+    settings = repo.config.get("publishing", {})
+    if "html_cover_image" in settings:
+        image = settings["html_cover_image"]
+        if image is None:
+            theme.pop("cover_image", None)
+        else:
+            theme["cover_image"] = str(theme_asset(repo, image, IMAGE_SUFFIXES))
     pictures = {}
     for key in ("header_image", "footer_image", "cover_image"):
         pictures[key] = (
@@ -170,7 +182,7 @@ def branded_article(repo, path, link_for=article_url):
 <p>{esc(metadata.get("description", ""))}</p>
 <div class="document-control">{esc(metadata.get("id", ""))} ·
 {labels[0]} {esc(metadata.get("revision", ""))} · {labels[1]} {esc(metadata.get("updated_on", ""))} ·
-{labels[2]}{status_separator}{esc(status)}</div></header>
+{labels[2]}{status_separator}{esc(status)}</div>{byline}</header>
 {pictures["cover_image"]}{render_body(repo, path, body, link_for)}
 {related_html}{pictures["footer_image"]}</article>'''
 

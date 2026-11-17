@@ -12,6 +12,7 @@ ASSETS = {
     "branding": {"logo": IMAGE_SUFFIXES},
     "publishing": {
         "cover_image": IMAGE_SUFFIXES,
+        "html_cover_image": IMAGE_SUFFIXES,
         "header_image": IMAGE_SUFFIXES,
         "footer_image": IMAGE_SUFFIXES,
         "font": {".ttf", ".ttc"},

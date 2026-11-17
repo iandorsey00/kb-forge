@@ -1,6 +1,7 @@
-:root { color-scheme: light; --ink:#142a2a; --muted:#496461; --accent:var(--workspace-accent,#16564c); --line:#d6e2de; font: 16px/1.55 system-ui, sans-serif; }
+:root { color-scheme: light; --ink:#142a2a; --muted:#496461; --line:#d6e2de; font: 16px/1.55 system-ui, sans-serif; }
 * { box-sizing:border-box; }
-body { margin:0; color:var(--ink); background:var(--workspace-background,#f4f7f5); }
+/* The workspace palette is set on body by the app. */
+body { --accent:var(--workspace-accent,#16564c); margin:0; color:var(--ink); background:var(--workspace-background,#f4f7f5); }
 a { color:var(--accent); }
 .site { background:var(--workspace-navigation,#143b35); color:white; padding:1rem max(1rem, calc((100vw - 1100px)/2)); display:flex; flex-wrap:wrap; gap:1.4rem; align-items:center; }
 .site a { color:white; text-decoration:none; }

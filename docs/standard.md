@@ -23,6 +23,7 @@ Use UTF-8. Configuration, the registry, and front matter use JSON object syntax,
 | `id` | Permanent identifier, matching the directory. Use 1–80 ASCII letters, digits, hyphens or underscores, beginning with a letter or digit. |
 | `language` | Configured language tag such as `en-US` or `zh-CN`, matching the filename stem exactly |
 | `title`, `owner` | Required nonempty strings |
+| `author` | Optional author name. HTML shows it below the title, and PDF shows it before the article body unless a custom cover places it. The name also appears in PDF properties. |
 | `type` | Required template key from `kbforge.yaml` |
 | `status` | `draft`, `published`, or `retired` |
 | `revision` | Positive integer. Increase it when an edition changes. |
@@ -68,6 +69,7 @@ The optional `publishing` object in `kbforge.yaml` describes the output, using o
 | --- | --- |
 | `branding.logo` | Existing collection logo |
 | `publishing.cover_image` | Artwork for the generated cover, which also shows the article title, ID, revision, and update date |
+| `publishing.html_cover_image` | Optional artwork for the browser article view and static HTML export. Omit to reuse `cover_image`, or set to `null` to hide cover artwork in HTML. The PDF cover uses its own settings. |
 | `publishing.header_image`, `publishing.footer_image` | Optional page artwork, repeated in paginated PDF output and shown once each in HTML |
 | `publishing.paper` | `A4` (default) or `Letter` |
 | `publishing.toc_depth` | Deepest Markdown heading level included in the linked PDF contents, from 0 (off) to 6. Default is 2. |
@@ -77,7 +79,7 @@ The HTML view displays the collection artwork and an HTML title block. To see an
 
 ### Workspace branding and fonts
 
-The optional `workspace` object controls the KB Forge interface. Set `name`, an optional `logo` filename under `branding/`, and `accent`, `navigation`, and `background` as six-digit hex colors. Use dark accent and navigation colors for white labels and a light background for dark text. The existing `branding` and `publishing` settings continue to control articles.
+The optional `workspace` object controls the KB Forge interface. Set `name`, an optional `logo` filename under `branding/`, and `accent`, `navigation`, and `background` as six-digit hex colors. The accent color sets primary button backgrounds, secondary button outlines and text, and links. Use dark accent and navigation colors for white labels and a light background for dark text. The existing `branding` and `publishing` settings continue to control articles.
 
 Use `publishing.font` to name a TrueType font file (`.ttf` or `.ttc`) under `branding/`, or set the local `KBFORGE_PDF_FONT` environment variable to an absolute path. KB Forge embeds the glyphs it uses. For Chinese documents it also tries Arial Unicode on macOS, Microsoft YaHei on Windows, and WenQuanYi Zen Hei on Linux. If those are unavailable, configure a CJK TrueType font with the required glyphs.
 
@@ -95,7 +97,56 @@ Set `publishing.cover_layout` in `kbforge.yaml` to place elements on the generat
 ```
 
 - Use `image` with `logo`, `cover_image`, `header_image`, or `footer_image`. Images retain their proportions. Unconfigured images are skipped.
-- Use `field` with `title`, `id`, `revision`, `updated_on`, `owner`, `status`, `language`, or `organization`. Use `text` for literal text. Optional text settings are `size` in points (default 12), `bold` (default false), and a six-digit hex `color` (default `#202020`).
+- Use `field` with `title`, `id`, `revision`, `updated_on`, `owner`, `author`, `status`, `language`, or `organization`. Use `text` for literal text. Optional text settings are `size` in points (default 12), `bold` (default false), and a six-digit hex `color` (default `#202020`).
 - Alignment is `left`, `center`, or `right`. Elements start at the top of their boxes and are drawn in list order. Export reports text that exceeds its box.
 
 A custom layout draws only the specified elements on the cover. Omit it to use the built-in cover. An article's `cover_pdf` takes precedence. The layout travels with a theme ZIP. Restart KB Forge after changing collection settings, then use **Open branded PDF** to preview the cover.
+
+### Deliberate ID migration
+
+Stop KB Forge and back up the collection before changing an assigned ID. From the checkout, preview the affected edition paths, then apply the migration explicitly:
+
+```sh
+python3 -m kbforge work-collection --renumber OLD-00001 NEW-00001
+python3 -m kbforge work-collection --renumber OLD-00001 NEW-00001 --force
+python3 -m kbforge work-collection --validate
+```
+
+The tool moves all editions and shared assets together, records the old ID in each edition's `previous_ids`, and keeps both IDs reserved. It updates `related` and conventional relative Markdown links between articles. Review custom metadata and external links separately and regenerate any exported PDFs or HTML.
+
+## Article packages
+
+An **article package** is a directory containing one article, including all its language editions and shared images. Its contents use the same layout as a directory under `articles/<id>/`:
+
+```text
+my-article/
+  en-US.md
+  zh-CN.md
+  assets/
+    input-selector.png
+```
+
+- Include at least one `<language>.md` file. Each edition must follow the article metadata rules above, name a language and document type configured in the destination collection, and carry the same valid `id`. The package directory name can differ from the ID. Include the source edition when supplying translations.
+- `assets/` is optional. It can contain PNG, JPG, GIF, or WebP files up to 8 MiB each, following the collection's image naming rules. Use relative image references such as `assets/input-selector.png`. Keep only article editions and assets in the package. Symbolic links are unsupported. Any collection-wide branding must already be installed in the destination.
+- The ID must be unused in the destination, including its reservation registry. To add another language edition to an existing article, manage it in that article's directory.
+
+Stop KB Forge before importing. From the checkout, run:
+
+```sh
+python3 -m kbforge work-collection --import-package /path/to/my-article
+```
+
+KB Forge validates the incoming editions and their references against the destination, reports warnings, and registers the imported ID. Validation errors abort the import. The source package remains available for editing or reuse. The defaults for new article ID allocation do not affect the package's explicit ID.
+
+## Collection-wide standards migrations
+
+KB Forge provides named migrations for upgrading existing article files when a standard changes. Each migration defines its own rules for transforming the source files. Run `python3 -m kbforge --help` for the available migrations. Running a migration without `--force` lists affected editions without writing changes.
+
+The `author` migration fills missing, null, or blank author fields with a name you supply. It preserves existing credits, article content, IDs, and revision dates. Use it on a collection whose uncredited articles share that author. Stop KB Forge and back up the collection before applying the migration.
+
+```sh
+python3 -m kbforge work-collection --migrate author --author "Example Author"
+python3 -m kbforge work-collection --migrate author --author "Example Author" --force
+```
+
+Export HTML and PDFs again to reflect changes in published copies.
