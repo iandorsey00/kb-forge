@@ -38,6 +38,7 @@ def write_json(path, data):
 
 def read_mapping(text):
     """Read the JSON-compatible subset of YAML used by the collection standard."""
+
     def unique_keys(pairs):
         result = {}
         for key, value in pairs:
@@ -91,6 +92,43 @@ def pandoc(markdown, output):
             "Pandoc could not process the article. Check installation and article syntax."
         ) from error
     return result.stdout
+
+
+def initialize_collection(root, name, prefix, digits, language):
+    """Create a minimal collection without sample articles or reserved IDs."""
+    if (
+        not TOKEN.fullmatch(prefix)
+        or not 1 <= digits <= 12
+        or len(prefix) + digits + 1 > 80
+    ):
+        raise ValueError("Invalid ID prefix or digit count.")
+    if not LANGUAGE.fullmatch(language) or not name.strip():
+        raise ValueError("Use a nonempty collection name and a valid language tag.")
+    root.mkdir()
+    try:
+        (root / "articles").mkdir()
+        (root / "registry").mkdir()
+        write_json(root / "registry" / "ids.yaml", {})
+        write_json(
+            root / "kbforge.yaml",
+            {
+                "identifiers": {
+                    "prefix": prefix,
+                    "separator": "-",
+                    "digits": digits,
+                    "start": 1,
+                },
+                "languages": [language],
+                "branding": {"name": name.strip()},
+                "templates": {"article": {"label": "Article", "sections": []}},
+            },
+        )
+    except OSError:
+        # The root was freshly created by this operation.
+        import shutil
+
+        shutil.rmtree(root)
+        raise
 
 
 class Repository:
@@ -286,7 +324,7 @@ class Repository:
             )
             reservations = {}
         for path, metadata, _, error in articles:
-        # Index all editions before checking references and translation relationships.
+            # Index all editions before checking references and translation relationships.
             if error:
                 report("Error", path, f"Fix the front matter: {error}")
                 continue

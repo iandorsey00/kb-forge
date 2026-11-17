@@ -32,7 +32,7 @@ def image_data(path):
     return f"data:{mime};base64," + base64.b64encode(data).decode("ascii")
 
 
-def render_body(repo, path, body):
+def render_body(repo, path, body, link_for=article_url):
     """Rewrite local links and images at the AST level before generating HTML."""
     ast = json.loads(pandoc(body, "json"))
 
@@ -84,7 +84,10 @@ def render_body(repo, path, body):
                     fragment = (
                         "#" + quote(unquote(parts.fragment)) if parts.fragment else ""
                     )
-                    content[-1][0] = article_url(candidate) + fragment
+                    url = link_for(candidate)
+                    if url is None:
+                        raise ValueError
+                    content[-1][0] = url + fragment
             except (OSError, ValueError):
                 return {"t": "Span", "c": [["", [], []], rewrite(content[1])]}
         return {key: rewrite(child) for key, child in value.items()}
@@ -103,7 +106,7 @@ def render_body(repo, path, body):
         raise ValueError("Could not render the article.") from error
 
 
-def branded_article(repo, path):
+def branded_article(repo, path, link_for=article_url):
     import re
 
     metadata, body = load_article(path)
@@ -139,8 +142,11 @@ def branded_article(repo, path):
                     other = next(iter(sorted(other.parent.glob("*.md"))), other)
                 other = repo.article_path(target, other.stem)
                 other_metadata, _ = load_article(other)
+                url = link_for(other)
+                if url is None:
+                    continue
                 related.append(
-                    f'<a href="{esc(article_url(other))}">{esc(other_metadata.get("title", target))}</a>'
+                    f'<a href="{esc(url)}">{esc(other_metadata.get("title", target))}</a>'
                 )
             except (OSError, ValueError):
                 continue
@@ -165,5 +171,72 @@ def branded_article(repo, path):
 <div class="document-control">{esc(metadata.get("id", ""))} ·
 {labels[0]} {esc(metadata.get("revision", ""))} · {labels[1]} {esc(metadata.get("updated_on", ""))} ·
 {labels[2]}{status_separator}{esc(status)}</div></header>
-{pictures["cover_image"]}{render_body(repo, path, body)}
+{pictures["cover_image"]}{render_body(repo, path, body, link_for)}
 {related_html}{pictures["footer_image"]}</article>'''
+
+
+def export_html(repo, destination):
+    """Build a static site with embedded images and relative article links."""
+    import shutil
+
+    published = {}
+    for path, metadata, _, error in repo.scan():
+        if error or metadata.get("status") != "published":
+            continue
+        if repo.article_path(path.parent.name, path.stem) != path:
+            raise ValueError(f"Invalid article location: {path.name}")
+        published[path.resolve()] = metadata
+
+    def filename(path):
+        return f"{path.parent.name}.{path.stem}.html"
+
+    def link_for(path):
+        resolved = path.resolve()
+        return quote(filename(resolved)) if resolved in published else None
+
+    def page(title, content, language="en"):
+        return f"""<!doctype html><html lang="{esc(language)}"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>{esc(title)}</title><link rel="stylesheet" href="style.css">
+</head><body><main>{content}</main></body></html>"""
+
+    if len({filename(path).casefold() for path in published}) != len(published):
+        raise ValueError("Two published editions would use the same HTML filename.")
+    if destination.resolve().is_relative_to(repo.root) and any(
+        destination.resolve().is_relative_to(repo.path(folder).resolve())
+        for folder in ("articles", "registry", "branding")
+    ):
+        raise ValueError(
+            "Choose an output folder outside the collection's source folders."
+        )
+    destination.mkdir()
+    try:
+        (destination / "style.css").write_bytes(
+            Path(__file__).with_name("style.css").read_bytes()
+        )
+        entries = []
+        for path, metadata in published.items():
+            title = metadata.get("title") or path.parent.name
+            language = metadata.get("language") or path.stem
+            entries.append(
+                f'<li><a href="{esc(link_for(path))}">{esc(title)}</a> · {esc(language)}</li>'
+            )
+            content = '<p><a href="index.html">All articles</a></p>' + branded_article(
+                repo, path, link_for
+            )
+            (destination / filename(path)).write_text(
+                page(title, content, language), encoding="utf-8"
+            )
+        name = repo.config["branding"]["name"]
+        listing = (
+            "<ul>" + "".join(entries) + "</ul>"
+            if entries
+            else "<p>No published articles.</p>"
+        )
+        (destination / "index.html").write_text(
+            page(name, f"<h1>{esc(name)}</h1>{listing}"), encoding="utf-8"
+        )
+    except (OSError, ValueError, KeyError, TypeError):
+        shutil.rmtree(destination)
+        raise

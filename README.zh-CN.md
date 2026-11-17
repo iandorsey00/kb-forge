@@ -34,7 +34,7 @@ python3 -m kbforge demo-work
 ### 体验演示流程
 
 1. 打开 **New article**（新建文章）。选择 **Procedure**（操作规程），将来源保持为 **New article**，填写标题、负责人和未来的复审日期，再添加一个便于搜索的标签，例如 `demo-cable`。点击 **Create draft**（创建草稿）。在刚复制的演示资料中，新文章编号为 `FIELD-000005`。
-2. 在 **Purpose**（目的）和 **Steps**（操作步骤）下填写正文，点击 **Save changes**（保存更改）。重新打开 **Edit**（编辑），选择 PNG 或 JPEG 图片，填写图片描述，再点击 **Add image**（添加图片）。编辑器会在正文末尾添加相对链接。可在 Markdown 正文中将链接移到对应步骤下。
+2. 在 **Purpose**（目的）和 **Steps**（操作步骤）下填写正文。将光标移到需要插入图片的位置，选择 PNG 或 JPEG 图片并填写描述，再点击 **Attach image**（添加图片）。最后点击 **Save changes**（保存更改），一并保存正文和图片引用。
 3. 在 **Catalog**（目录）中搜索 `demo-cable`。打开文章，检查品牌样式和图片。通过 **Validation**（校验）查找问题。演示资料中的练习草稿故意缺少负责人、必要章节和图片，且已超过复审日期。
 4. 点击 **Publish**（发布），再点击 **Print or save as PDF**（打印或另存为 PDF）。在 Chromium 中选择“另存为 PDF”，关闭浏览器自带的页眉页脚，并在保存前检查预览。打印样式会提供 A4 页边距、页码和带品牌样式的标题区。可打开 `FIELD-000001` 的中文版，检查汉字和截图是否清晰。如果预览中缺少汉字，请安装系统简体中文字体。
 5. 用文本编辑器打开 `demo-work/articles/FIELD-000005/en-US.md`，查看文件开头的元数据和图片相对链接。直接打开该文章 `assets` 目录中的 PNG 或 JPEG 图片。
@@ -83,3 +83,32 @@ ZIP 包含 `workspace`、`branding` 和 `publishing` 设置及其引用的资源
 如果通过 Git 工作副本运行 KB Forge，请选择 **Updates → Check and install update**。KB Forge 会获取当前分支所跟踪的远程分支，并仅通过快进方式更新。更新前请保存打开的文章，并提交或暂存工作副本中的本地更改。如果当前分支含有上游没有的提交，请先通过 Git 处理。
 
 更新后按 **Ctrl+C** 停止 KB Forge，再运行平时使用的启动命令。如果更新修改了可选的 PDF 依赖，请重新运行上面的安装命令。如果使用的是 ZIP 下载版，请换用新版程序，并在新版中打开已有的知识库。
+
+### 创建空白知识库
+
+在项目目录中运行以下命令，指定一个尚不存在的目录：
+
+```sh
+python3 -m kbforge work-collection --init --name "技术支持知识库" --prefix SUPPORT --digits 5
+python3 -m kbforge work-collection
+```
+
+该命令创建最小配置、空编号登记表、空文章目录和通用文章模板。使用 `--language` 设置首选语言，默认值为 `en-US)。之后可导入主题 ZIP 以应用品牌样式。在 Windows PowerShell 中，可使用 `py` 代替 `python3`。
+
+**Attach image** 会在光标处插入图片引用，保留尚未保存的草稿内容。文件会立即写入资源目录，请保存更改以保留文章中的引用。如果放弃草稿，可通过校验查找未引用的资源。
+
+### 导出静态 HTML 站点
+
+```sh
+python3 -m kbforge work-collection --export-html --output published-site
+```
+
+每次导出请使用新目录。结果包括索引页、共享样式表，以及每个已发布语言版本的品牌页面。图片嵌入页面，文章链接使用相对路径。可在本地打开 `index.html`，或将整个目录复制到经批准的内部静态站点。对于 SharePoint，可将 PDF 上传到文档库，或在现代页面中链接到单独托管的站点。
+
+### 管理字体、编号与版本
+
+如需统一拉丁字母 PDF 字体，可将 Inter 等静态 TrueType 字体放入 `branding/`，并在 `publishing.font` 中填写文件名。中文版需要包含中文字形的字体。修改字体后，从 Markdown 重新导出以更新分页。导入的 PDF 封面保留原有字体。
+
+知识库移交后，已有文章应保留原编号。采用正式编号规则后，可为新文章使用新前缀。如果现有文章必须重新编号，请保留新旧编号对照表，并在元数据中保存原编号。更新引用，然后重新生成受影响的导出文件。
+
+应用版本使用 `v0.1.0` 等 Git 标签，并记录在[更新日志](CHANGELOG.md)中。知识库格式与文章修订号独立于应用版本。应用内更新功能跟踪已配置的 Git 上游分支。

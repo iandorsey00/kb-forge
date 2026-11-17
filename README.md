@@ -34,7 +34,7 @@ In Windows PowerShell, use `Copy-Item -Recurse example demo-work` and `py -m kbf
 ### Try the demo
 
 1. Open **New article**. Choose **Procedure**, keep **New article** as the source, enter a title and owner, and set a future review date. Enter a distinctive tag such as `demo-cable`. Select **Create draft**. On a fresh copy, the new ID is `FIELD-000005`.
-2. Add text under **Purpose** and **Steps**, and select **Save changes**. Reopen **Edit**, choose a PNG or JPEG, describe it, and select **Add image**. The editor adds the relative Markdown reference at the end. Move it in the Markdown if it belongs under a different step.
+2. Add text under **Purpose** and **Steps**. Place the cursor where the image belongs, choose a PNG or JPEG, describe it, and select **Attach image**. Then select **Save changes** to save the text and image reference together.
 3. In **Catalog**, search for `demo-cable`. Open the article to check the branding and image. Use **Validation** to find problems. The supplied incomplete practice draft intentionally has a missing owner, a missing section and image, and an overdue review.
 4. Select **Publish**, then **Print or save as PDF**. In Chromium, choose **Save as PDF**, turn off the browser's own headers and footers, and check the preview before saving. The print stylesheet supplies A4 margins, page numbers, and the branded title block. Try the Chinese edition of `FIELD-000001` to check the characters and screenshot. Install a Simplified Chinese system font if the print preview shows missing glyphs.
 5. In a text editor, open `demo-work/articles/FIELD-000005/en-US.md` and inspect its front matter and relative image link. Open the PNG or JPEG in the article's `assets` folder directly.
@@ -83,3 +83,32 @@ The ZIP contains the `workspace`, `branding`, and `publishing` settings and the 
 If you run KB Forge from a Git checkout, open **Updates → Check and install update**. KB Forge fetches the current branch's configured upstream and applies it only as a fast-forward. Finish any open article edits first. Commit or set aside local checkout changes before updating. Use Git directly to reconcile a branch with local-only commits.
 
 After an update, stop KB Forge with **Ctrl+C** and run your usual launch command again. If the update changes the optional PDF dependencies, rerun the installation command above. For a ZIP download, replace the application with a newer copy and open your existing collection from it.
+
+### Create a blank collection
+
+Run this from the checkout with a new destination directory:
+
+```sh
+python3 -m kbforge work-collection --init --name "Support Knowledge Base" --prefix SUPPORT --digits 5
+python3 -m kbforge work-collection
+```
+
+This creates a minimal configuration, an empty ID registry and article directory, and a generic article template. Use `--language` to set the first language (default `en-US`). Import a theme ZIP to add branding later. In Windows PowerShell, use `py` in place of `python3`.
+
+**Attach image** inserts a reference at the editor cursor without reloading the draft. The file is stored immediately. Save changes to make the reference part of the article. If you abandon the draft, validation can identify unreferenced assets.
+
+### Export a static HTML site
+
+```sh
+python3 -m kbforge work-collection --export-html --output published-site
+```
+
+Use a new output directory each time. The output includes an index, a shared stylesheet, and one branded page per published edition. Images are embedded and links between exported articles are relative. Open `index.html` locally or copy the entire directory to an approved internal static host. For SharePoint, upload PDFs to a document library or link to the separately hosted site from a modern page.
+
+### Manage fonts, identifiers, and releases
+
+For a consistent Latin PDF font, place a static TrueType font such as Inter under `branding/` and set `publishing.font` to its filename. Chinese editions need a font with Chinese glyphs. Re-export from Markdown to apply font changes and recalculate pagination. An imported PDF cover keeps its original typography.
+
+Keep existing IDs as ownership changes. Switch the prefix for new articles when an official numbering scheme is adopted. If existing articles must be renumbered, keep an old-to-new map and preserve each original ID in metadata. Update references and regenerate the affected exports.
+
+App releases use Git tags such as `v0.1.0` with a [changelog](CHANGELOG.md). Collection format and article revisions are independent of app releases. The in-app updater follows the configured Git upstream branch.

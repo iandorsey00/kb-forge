@@ -1,4 +1,5 @@
 import base64
+import json
 from io import BytesIO
 from pathlib import Path
 import re
@@ -10,7 +11,13 @@ from urllib.parse import urlencode
 from types import SimpleNamespace
 
 from kbforge.app import Handler
-from kbforge.repository import Repository, load_article, save_article
+from kbforge.publishing import export_html
+from kbforge.repository import (
+    Repository,
+    initialize_collection,
+    load_article,
+    save_article,
+)
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "example"
 
@@ -28,6 +35,7 @@ class WorkflowTest(unittest.TestCase):
 
         class InMemoryHandler(Handler):
             """Exercise actual HTTP parsing and routing without opening a socket."""
+
             def setup(self):
                 self.rfile = BytesIO(self.request)
                 self.wfile = BytesIO()
@@ -115,6 +123,19 @@ class WorkflowTest(unittest.TestCase):
         self.assertEqual(
             (path.parent / "assets/my-screenshot-2.png").read_bytes(), image
         )
+        saved = path.read_bytes()
+        attached = post(
+            "/image" + query,
+            insert="draft",
+            filename="Draft.png",
+            image=data,
+            alt="Draft screenshot",
+        )
+        self.assertEqual(
+            json.loads(attached)["markdown"], "![Draft screenshot](assets/draft.png)"
+        )
+        self.assertEqual(path.read_bytes(), saved)
+        self.assertEqual((path.parent / "assets/draft.png").read_bytes(), image)
         chinese = get("/publish?id=FIELD-000001&language=zh-CN")
         self.assertIn("处理会议室显示屏无信号的问题", chinese)
         self.assertRegex(chinese, re.compile(r'lang="zh-CN".*?修订版', re.S))
@@ -137,3 +158,25 @@ class WorkflowTest(unittest.TestCase):
             self.repo.article_path("../branding", "en-US")
         with self.assertRaises(ValueError):
             self.repo.store_image("FIELD-000001", "image.png", b"invalid")
+
+    def test_blank_collection_and_static_site(self):
+        location = self.root.parent / "new"
+        initialize_collection(location, "New collection", "SUPPORT", 5, "en-US")
+        blank = Repository(location)
+        self.assertEqual(list(blank.scan()), [])
+        self.assertEqual(blank.validate(), [])
+        self.assertEqual(blank.reserve_id(), "SUPPORT-00001")
+        with self.assertRaises(FileExistsError):
+            initialize_collection(location, "Replacement", "NEW", 5, "en-US")
+
+        destination = self.root.parent / "site"
+        export_html(self.repo, destination)
+        index = (destination / "index.html").read_text(encoding="utf-8")
+        self.assertIn("FIELD-000001.zh-CN.html", index)
+        page = (destination / "FIELD-000001.en-US.html").read_text(encoding="utf-8")
+        self.assertIn('href="FIELD-000002.en-US.html"', page)
+        self.assertIn("data:image/png;base64,", page)
+        self.assertNotIn('href="/article?', page)
+        self.assertFalse((destination / "FIELD-000004.en-US.html").exists())
+        with self.assertRaises(FileExistsError):
+            export_html(self.repo, destination)

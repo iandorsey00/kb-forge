@@ -15,8 +15,15 @@ from urllib.parse import parse_qs, urlsplit
 
 from .theme import export_theme, import_theme
 from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, theme_asset
-from .publishing import article_url, branded_article, esc, image_data
-from .repository import LIST_FIELDS, STATUSES, Repository, load_article, save_article
+from .publishing import export_html, article_url, branded_article, esc, image_data
+from .repository import (
+    LIST_FIELDS,
+    STATUSES,
+    Repository,
+    initialize_collection,
+    load_article,
+    save_article,
+)
 
 from .update import update_checkout
 
@@ -78,7 +85,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header(
             "Content-Security-Policy",
             "default-src 'none'; style-src 'self' 'unsafe-inline'; img-src data:; "
-            "script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+            "script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
         )
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Cache-Control", "no-store")
@@ -508,11 +515,11 @@ class Handler(BaseHTTPRequestHandler):
 <label>Article Markdown<textarea name="body">{esc(body.strip())}</textarea></label>
 <button>Save changes</button></form>
 <form class="panel" id="image-upload" method="post" action="{esc(article_url(path, "image"))}">
-{self.form_token()}<h2>Add an image</h2><p>Save pending edits first. The image reference is added at the end of the article.</p>
+{self.form_token()}<h2>Add an image</h2><p>The image reference is inserted at the cursor. Save changes to keep it in the article.</p>
 <label>Image<input id="image-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" required></label>
 {field("alt", "Describe the image for readers", required=True)}
 <input type="hidden" name="filename"><input type="hidden" name="image">
-<p id="upload-error" role="status"></p><button>Add image</button>
+<p id="upload-error" role="status"></p><button type="submit">Attach image</button>
 <noscript><p>Enable JavaScript to upload an image through this form.</p></noscript>
 <ul>{assets}</ul></form>''',
         )
@@ -570,6 +577,14 @@ class Handler(BaseHTTPRequestHandler):
             relative = self.repo.store_image(
                 path.parent.name, values.get("filename", ""), image
             )
+            if values.get("insert") == "draft":
+                import json
+
+                self.send_content(
+                    json.dumps({"markdown": f"![{alt}]({relative})"}),
+                    content_type="application/json",
+                )
+                return
             try:
                 metadata.update(
                     revision=metadata["revision"] + 1,
@@ -628,7 +643,21 @@ def main():
         "--validate", action="store_true", help="Validate the collection and exit"
     )
     actions.add_argument("--export-pdf", nargs=2, metavar=("ID", "LANGUAGE"))
-    parser.add_argument("--output", type=Path, help="Output path for --export-pdf")
+    actions.add_argument(
+        "--init", action="store_true", help="Create a blank collection"
+    )
+    actions.add_argument(
+        "--export-html",
+        action="store_true",
+        help="Export published articles as a static site",
+    )
+    parser.add_argument("--name", help="Collection name for --init")
+    parser.add_argument("--prefix", default="KB", help="ID prefix for --init")
+    parser.add_argument("--digits", type=int, default=5, help="ID digits for --init")
+    parser.add_argument("--language", default="en-US", help="Language for --init")
+    parser.add_argument(
+        "--output", type=Path, help="Output path for PDF or HTML export"
+    )
     actions.add_argument(
         "--export-theme", type=Path, metavar="ZIP", help="Export branding and layout"
     )
@@ -636,12 +665,28 @@ def main():
         "--import-theme", type=Path, metavar="ZIP", help="Apply branding and layout"
     )
     args = parser.parse_args()
-    if bool(args.export_pdf) != bool(args.output):
-        parser.error("--export-pdf and --output must be used together.")
-    if not (args.export_theme or args.import_theme) and not shutil.which("pandoc"):
+    if bool(args.export_pdf or args.export_html) != bool(args.output):
+        parser.error("--output is required for PDF and HTML export.")
+    if not (args.init or args.export_theme or args.import_theme) and not shutil.which(
+        "pandoc"
+    ):
         parser.error("Pandoc is required and must be on PATH.")
     try:
+        if args.init:
+            initialize_collection(
+                args.collection,
+                args.name if args.name is not None else args.collection.resolve().name,
+                args.prefix,
+                args.digits,
+                args.language,
+            )
+            print(f"Created {args.collection}")
+            return 0
         repo = Repository(args.collection)
+        if args.export_html:
+            export_html(repo, args.output)
+            print(args.output / "index.html")
+            return 0
         if args.export_theme:
             export_theme(repo, args.export_theme)
             print(args.export_theme)
