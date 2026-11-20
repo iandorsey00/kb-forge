@@ -7,7 +7,7 @@ import re
 from .repository import TOKEN, atomic_text, read_mapping, save_article, write_json
 
 
-def plan_renumber(repo, old, new):
+def plan_renumber(repo, old, new, *, remember_previous=True):
     if (
         any(not TOKEN.fullmatch(value) for value in (old, new))
         or old.casefold() == new.casefold()
@@ -57,8 +57,9 @@ def plan_renumber(repo, old, new):
             metadata = {
                 **metadata,
                 "id": new,
-                "previous_ids": list(dict.fromkeys([*previous, old])),
             }
+            if remember_previous:
+                metadata["previous_ids"] = list(dict.fromkeys([*previous, old]))
             editions += 1
         elif metadata.get("id") in (old, new):
             raise ValueError(
@@ -85,7 +86,7 @@ def plan_renumber(repo, old, new):
     return source, destination, registry, reserved, changes
 
 
-def renumber(repo, old, new, *, force=False):
+def renumber(repo, old, new, *, force=False, remember_previous=True):
     if not force:
         return list(plan_renumber(repo, old, new)[-1])
 
@@ -96,7 +97,9 @@ def renumber(repo, old, new, *, force=False):
         raise ValueError("Another ID operation is active.") from error
     try:
         os.close(descriptor)
-        source, destination, registry, reserved, changes = plan_renumber(repo, old, new)
+        source, destination, registry, reserved, changes = plan_renumber(
+            repo, old, new, remember_previous=remember_previous
+        )
         originals = {path: path.read_text(encoding="utf-8") for path in changes}
         originals[registry] = registry.read_text(encoding="utf-8")
         written = []

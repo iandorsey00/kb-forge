@@ -1,15 +1,40 @@
 """Check that complete collection ZIPs can be recovered outside the source."""
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from zipfile import ZipFile
 
-from kbforge.backup import backup_collections
-from kbforge.repository import initialize_collection
+from kbforge.backup import backup_collections, backup_schedule, run_scheduled_backup
+from kbforge.repository import Repository, initialize_collection
 
 
 class BackupTest(unittest.TestCase):
+    def test_scheduled_backups_only_run_when_due(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "collection"
+            initialize_collection(source, "Collection", "DOC", 5, "en-US")
+            repo = Repository(source)
+            self.assertIsNone(backup_schedule(repo))
+            repo.config["scheduled_backup"] = {
+                "directory": "../archives",
+                "interval_hours": 24,
+            }
+            schedule = backup_schedule(repo)
+            now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            first = run_scheduled_backup(repo, schedule, now=now)
+            self.assertIsNone(
+                run_scheduled_backup(repo, schedule, now=now + timedelta(hours=23))
+            )
+            second = run_scheduled_backup(repo, schedule, now=now + timedelta(days=1))
+            self.assertNotEqual(first, second)
+            for path in (first, second):
+                with ZipFile(path) as archive:
+                    self.assertIsNone(archive.testzip())
+                    self.assertIn("collection/kbforge.yaml", archive.namelist())
+
     def test_archive_and_restore_multiple_collections(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -13,11 +13,13 @@ import shutil
 import sys
 from urllib.parse import parse_qs, urlsplit
 
-from .backup import backup_collections
+from .backup import backup_collections, backup_schedule, run_scheduled_backup
 from .package import import_package
 from .theme import export_theme, import_theme
 from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, theme_asset
 from .publishing import export_html, article_url, branded_article, esc, image_data
+from .site_release import change_lines, copy_site, publish_site, rollback_site
+from .collaboration import clone_site, push_site
 from .repository import (
     LIST_FIELDS,
     STATUSES,
@@ -662,9 +664,47 @@ def main():
         "--init", action="store_true", help="Create a blank collection"
     )
     actions.add_argument(
-        "--export-html",
+        "--export-site",
         action="store_true",
-        help="Export published articles as a static site",
+        help="Export published articles as a static site with branded PDFs",
+    )
+    parser.add_argument(
+        "--html-only",
+        action="store_true",
+        help="Omit PDFs when exporting or publishing a site",
+    )
+    actions.add_argument(
+        "--publish-site",
+        metavar="NAME",
+        help="Preview publishing to a named destination",
+    )
+    actions.add_argument(
+        "--rollback-site",
+        metavar="NAME",
+        help="Preview restoring a previous site release",
+    )
+    actions.add_argument(
+        "--clone-site",
+        metavar="DIRECTORY",
+        type=Path,
+        help="Clone an editable collection from a shared publishing location",
+    )
+    actions.add_argument(
+        "--push-site",
+        metavar="DIRECTORY",
+        type=Path,
+        help="Preview merging changes into a shared publishing location",
+    )
+    actions.add_argument(
+        "--copy-site",
+        metavar="NAME",
+        help="Copy a destination's live site to a new folder",
+    )
+    parser.add_argument(
+        "--apply", action="store_true", help="Apply a site publish or rollback"
+    )
+    parser.add_argument(
+        "--release", metavar="ID", help="Choose a specific release for --rollback-site"
     )
     parser.add_argument("--name", help="Collection name for --init")
     parser.add_argument("--prefix", default="KB", help="ID prefix for --init")
@@ -711,18 +751,41 @@ def main():
         action="store_true",
         help="Archive all collections directly inside the given parent directory",
     )
+    actions.add_argument(
+        "--run-scheduled-backup",
+        action="store_true",
+        help="Run the collection's scheduled backup if due",
+    )
     parser.add_argument("--author", help="Author value for the author migration")
     args = parser.parse_args()
+    if args.html_only and not (args.export_site or args.publish_site or args.push_site):
+        parser.error(
+            "--html-only requires --export-site, --publish-site, or --push-site."
+        )
+    if args.apply and not (args.publish_site or args.rollback_site or args.push_site):
+        parser.error(
+            "--apply requires --publish-site, --rollback-site, or --push-site."
+        )
+    if args.release and not args.rollback_site:
+        parser.error("--release requires --rollback-site.")
     if args.force and not (args.renumber or args.migrate):
         parser.error("--force requires --renumber or --migrate.")
     if (args.author is not None) != (args.migrate == "author"):
         parser.error("--migrate author requires --author, and vice versa.")
     backup = args.backup_collection or args.backup_all_collections
-    if bool(args.export_pdf or args.export_html or backup) != bool(args.output):
-        parser.error("--output is required for PDF and HTML export and for backups.")
-    if args.update:
+    if bool(
+        args.export_pdf
+        or args.export_site
+        or args.clone_site
+        or args.copy_site
+        or backup
+    ) != bool(args.output):
+        parser.error(
+            "--output is required for export, site cloning, and manual backups."
+        )
+    if args.update or args.clone_site:
         if args.collection is not None:
-            parser.error("--update takes no collection path.")
+            parser.error("--update and --clone-site take no collection path.")
     elif args.collection is None:
         parser.error(
             "Provide a collection directory (or a parent for --backup-all-collections)."
@@ -735,9 +798,19 @@ def main():
         or args.import_theme
         or args.renumber
         or args.migrate
+        or args.rollback_site
+        or args.clone_site
+        or args.copy_site
+        or args.run_scheduled_backup
+        or (args.publish_site and not args.apply)
+        or (args.push_site and not args.apply)
     ) and not shutil.which("pandoc"):
         parser.error("Pandoc is required and must be on PATH.")
     try:
+        if args.clone_site:
+            release = clone_site(args.clone_site, args.output)
+            print(f"Cloned editable source at {release}. Open collection {args.output}")
+            return 0
         if args.update:
             result = update_checkout()
             if result:
@@ -768,6 +841,64 @@ def main():
             print(f"Created {args.collection}")
             return 0
         repo = Repository(args.collection)
+        if args.push_site:
+            target, release, changes, renumbered, refresh = push_site(
+                repo, args.push_site, include_pdfs=not args.html_only, apply=args.apply
+            )
+            for old, new in renumbered:
+                print(f"Incoming article ID {old} → {new}")
+            for line in change_lines(changes):
+                print(line)
+            if release:
+                print(f"Published {release}. Open {target / 'index.html'}")
+                if refresh:
+                    print(
+                        "Clone the merged source into a fresh folder before your next push."
+                    )
+            else:
+                print("Preview only. Add --apply to merge and publish.")
+            return 0
+        if args.run_scheduled_backup:
+            schedule = backup_schedule(repo)
+            if schedule is None:
+                raise ValueError(
+                    "Configure scheduled_backup before running the schedule."
+                )
+            output = run_scheduled_backup(repo, schedule)
+            print(output if output else "No scheduled backup is due.")
+            return 0
+        if args.publish_site:
+            target, release, changes = publish_site(
+                repo,
+                args.publish_site,
+                include_pdfs=not args.html_only,
+                apply=args.apply,
+            )
+            print(f"Destination: {target}")
+            for line in change_lines(changes):
+                print(line)
+            if release:
+                print(f"Published {release}. Open {target / 'index.html'}")
+            else:
+                if not changes:
+                    print("No article-edition changes.")
+                print("Preview only. Add --apply to build and publish.")
+            return 0
+        if args.rollback_site:
+            target, current, chosen = rollback_site(
+                repo, args.rollback_site, release_id=args.release, apply=args.apply
+            )
+            print(f"{target}: {current} → {chosen}")
+            print(
+                "Active release updated."
+                if args.apply
+                else "Preview only. Add --apply to switch."
+            )
+            return 0
+        if args.copy_site:
+            release = copy_site(repo, args.copy_site, args.output)
+            print(f"Copied {release}. Open {args.output / 'index.html'}")
+            return 0
         if args.migrate:
             paths = migrate_articles(repo, args.migrate, args.author, force=args.force)
             for path in paths:
@@ -799,8 +930,8 @@ def main():
                     f"Preview only: {old} → {new}. Stop KB Forge, back up the collection, then rerun with --force to apply."
                 )
             return 0
-        if args.export_html:
-            export_html(repo, args.output)
+        if args.export_site:
+            export_html(repo, args.output, include_pdfs=not args.html_only)
             print(args.output / "index.html")
             return 0
         if args.export_theme:
@@ -833,15 +964,41 @@ def main():
             for severity, path, message in findings:
                 print(f"{severity}\t{path}\t{message}")
             return int(any(severity == "Error" for severity, _, _ in findings))
+        schedule = backup_schedule(repo)
         with ThreadingHTTPServer(
             ("127.0.0.1", args.port), partial(Handler, repo, secrets.token_hex(32))
         ) as server:
             server.write_lock = threading.Lock()
+            stop = threading.Event()
+
+            def backup_worker():
+                while not stop.is_set():
+                    try:
+                        with server.write_lock:
+                            output = run_scheduled_backup(repo, schedule)
+                        if output:
+                            print(f"Scheduled backup: {output}", flush=True)
+                    except (ValueError, OSError) as error:
+                        print(
+                            f"KB Forge scheduled backup: {error}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                    stop.wait(60)
+
+            worker = threading.Thread(target=backup_worker) if schedule else None
             print(
                 f"KB Forge is running at http://127.0.0.1:{server.server_port}",
                 flush=True,
             )
-            server.serve_forever()
+            if worker:
+                worker.start()
+            try:
+                server.serve_forever()
+            finally:
+                stop.set()
+                if worker:
+                    worker.join()
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"KB Forge: {error}", file=sys.stderr)
         return 1

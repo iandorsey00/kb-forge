@@ -1,5 +1,25 @@
 # Changelog · 更新日志
 
+## v0.5.0
+
+- Use `--export-site` to export a static site with branded PDFs and download links. The HTML and PDF for each edition sit side by side under `articles/<id>/`. Add `--html-only` for HTML-only output.
+- Paginated PDFs render Markdown pipe tables with repeated headers on later pages.
+- Publish versioned site releases to named filesystem destinations, preview edition changes, roll back, and copy the live snapshot for offline use.
+- Clone editable sites and merge pushes from several editors. Automatically reassign independently allocated duplicate IDs and report conflicting file edits.
+- Include a portable site manifest and show recent new and updated editions on published homepages.
+- Schedule verified collection backups in the running app or through an operating system task.
+- Document OneDrive and SharePoint distribution and show the fictional example collection in the READMEs.
+
+### 简体中文
+
+- 使用 `--export-site` 导出静态站点及品牌 PDF，页面均提供下载链接。同一语言版本的 HTML 和 PDF 并排保存在 `articles/<id>/` 下。添加 `--html-only` 可仅导出 HTML。
+- 分页 PDF 支持使用竖线编写的 Markdown 表格，并在续页重复显示表头。
+- 可预览文章版本变更，将站点版本发布到具名的文件系统目标，执行回滚，并复制当前发布快照以供离线阅读。
+- 可克隆可编辑站点并合并多位编辑人员的推送。自动为独立分配的重复编号重新编号，并报告有冲突的文件修改。
+- 导出站点时生成可移植的清单，并在发布首页显示近期新发布或更新的文章。
+- 可通过运行中的应用或操作系统计划任务定时创建经过校验的知识库备份。
+- 记录通过 OneDrive 与 SharePoint 分发站点的方法，并在两个 README 中加入虚构知识库的应用截图。
+
 ## v0.4.0
 
 - Back up one or several complete collections to a verified ZIP.

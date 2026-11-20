@@ -127,6 +127,25 @@ def inline(nodes):
     return "".join(parts)
 
 
+def pdf_table(value):
+    """Extract rows and column alignment from a Pandoc GFM pipe table."""
+    _, _, columns, (_, headers), bodies, (_, footer) = value
+    rows = (
+        headers + [row for _, _, head, body in bodies for row in head + body] + footer
+    )
+    cells = [
+        [" ".join(inline(block["c"]) for block in blocks) for _, _, _, _, blocks in row]
+        for _, row in rows
+    ]
+    return {
+        "kind": "table",
+        "text": " ".join(cell for row in cells for cell in row),
+        "rows": cells,
+        "header_rows": len(headers),
+        "alignments": [alignment["t"] for alignment, _ in columns],
+    }
+
+
 def pdf_blocks(repo, path, blocks):
     """Adapt Pandoc nodes into the blocks the paginated renderer supports."""
     for node in blocks:
@@ -172,7 +191,11 @@ def pdf_blocks(repo, path, blocks):
                 marker = "•" if start is None else f"{start + index}."
                 gutter = max(14, 6 * len(marker) + 5)
                 for entry in pdf_blocks(repo, path, item):
-                    if "indent" not in entry and marker and entry["kind"] != "code":
+                    if (
+                        "indent" not in entry
+                        and marker
+                        and entry["kind"] not in ("code", "table")
+                    ):
                         entry["marker"] = (marker, gutter)
                         marker = ""
                     entry["indent"] = entry.get("indent", 0) + 12 + gutter
@@ -189,6 +212,8 @@ def pdf_blocks(repo, path, blocks):
                 yield entry
         elif kind == "CodeBlock":
             yield {"kind": "code", "text": value[1]}
+        elif kind == "Table":
+            yield pdf_table(value)
         elif kind not in ("RawBlock", "Null", "HorizontalRule"):
             raise ValueError(
                 f"The paginated PDF renderer does not support {kind}. Use browser print for this article."
@@ -205,6 +230,8 @@ def export_pdf(repo, path):
         raise ValueError(
             "Install PDF support with python -m pip install -r requirements-pdf.txt."
         )
+    from reportlab.platypus.doctemplate import LayoutError
+
     from .pdf_renderer import render_pdf
 
     metadata, body = load_article(path)
@@ -227,4 +254,9 @@ def export_pdf(repo, path):
         theme["cover_layout"] = cover_layout(settings)
     theme["organization"] = repo.config["branding"].get("name", "")
     blocks = list(pdf_blocks(repo, path, json.loads(pandoc(body, "json"))["blocks"]))
-    return render_pdf(metadata, theme, blocks)
+    try:
+        return render_pdf(metadata, theme, blocks)
+    except LayoutError as error:
+        raise ValueError(
+            "Page layout failed. Check for content too large to fit."
+        ) from error

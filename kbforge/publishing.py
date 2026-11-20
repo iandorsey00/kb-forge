@@ -2,14 +2,22 @@
 
 import base64
 import html
+from hashlib import file_digest, sha256
 import json
 import mimetypes
 from pathlib import Path
+from posixpath import relpath
 import subprocess
 from urllib.parse import quote, unquote, urlencode, urlsplit
 
-from .pdf import IMAGE_SUFFIXES, pdf_theme, theme_asset
-from .repository import ASSET, article_author, image_width, load_article, pandoc
+from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, pdf_theme, theme_asset
+from .repository import (
+    ASSET,
+    article_author,
+    image_width,
+    load_article,
+    pandoc,
+)
 
 
 def esc(value):
@@ -202,34 +210,84 @@ def branded_article(repo, path, link_for=article_url):
 {related_html}{pictures["footer_image"]}</article>'''
 
 
-def export_html(repo, destination):
-    """Build a static site with embedded images and relative article links."""
-    import shutil
-
+def site_editions(repo, include_pdfs, *, strict=False):
     published = {}
-    for path, metadata, _, error in repo.scan():
+    assets = {}
+    for path, metadata, body, error in repo.scan():
+        if error and strict:
+            raise ValueError(f"Cannot read {path.relative_to(repo.root)}: {error}")
         if error or metadata.get("status") != "published":
             continue
         if repo.article_path(path.parent.name, path.stem) != path:
             raise ValueError(f"Invalid article location: {path.name}")
-        published[path.resolve()] = metadata
+        if path.parent not in assets:
+            asset_folder = repo.path("articles", path.parent.name, "assets")
+            fingerprints = []
+            for asset in sorted(asset_folder.glob("*")):
+                if (
+                    ASSET.fullmatch(asset.name)
+                    and asset.is_file()
+                    and not asset.is_symlink()
+                ):
+                    with asset.open("rb") as stream:
+                        fingerprints.append(
+                            [asset.name, file_digest(stream, "sha256").hexdigest()]
+                        )
+            assets[path.parent] = fingerprints
+        stem = f"articles/{path.parent.name}/{path.stem}"
+        record = {
+            "id": path.parent.name,
+            "language": path.stem,
+            "title": metadata.get("title") or path.parent.name,
+            "revision": metadata.get("revision"),
+            "html": f"{stem}.html",
+            "source_sha256": sha256(
+                json.dumps(
+                    [metadata, body, assets[path.parent]], sort_keys=True
+                ).encode("utf-8")
+            ).hexdigest(),
+        }
+        if include_pdfs:
+            record["pdf"] = f"{stem}.pdf"
+        note = metadata.get("release_note")
+        if isinstance(note, str) and note.strip():
+            record["release_note"] = note.strip()
+        published[path.resolve()] = record
+    folders = {item["id"] for item in published.values()}
+    if len({name.casefold() for name in folders}) != len(folders):
+        raise ValueError("Published article IDs must have distinct folder names.")
+    if len({item["html"].casefold() for item in published.values()}) != len(published):
+        raise ValueError("Two published editions would use the same HTML path.")
+    return published
 
-    def filename(path):
-        return f"{path.parent.name}.{path.stem}.html"
 
-    def link_for(path):
+def export_html(repo, destination, *, include_pdfs=True, release=None, published=None):
+    """Build a portable site with relative links to articles and their PDFs."""
+    import shutil
+
+    if published is None:
+        published = site_editions(repo, include_pdfs)
+
+    def link_for(path, start="."):
         resolved = path.resolve()
-        return quote(filename(resolved)) if resolved in published else None
+        return (
+            quote(relpath(published[resolved]["html"], start))
+            if resolved in published
+            else None
+        )
 
-    def page(title, content, language="en"):
+    def page(title, content, language="en", stylesheet="style.css"):
         return f"""<!doctype html><html lang="{esc(language)}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
-<title>{esc(title)}</title><link rel="stylesheet" href="style.css">
+<title>{esc(title)}</title><link rel="stylesheet" href="{esc(stylesheet)}">
 </head><body><main>{content}</main></body></html>"""
 
-    if len({filename(path).casefold() for path in published}) != len(published):
-        raise ValueError("Two published editions would use the same HTML filename.")
+    if published and include_pdfs and not pdf_available():
+        raise ValueError(
+            "Install PDF support with python -m pip install -r requirements-pdf.txt "
+            "or use --html-only."
+        )
     if destination.resolve().is_relative_to(repo.root) and any(
         destination.resolve().is_relative_to(repo.path(folder).resolve())
         for folder in ("articles", "registry", "branding")
@@ -243,17 +301,41 @@ def export_html(repo, destination):
             Path(__file__).with_name("style.css").read_bytes()
         )
         entries = []
-        for path, metadata in published.items():
-            title = metadata.get("title") or path.parent.name
-            language = metadata.get("language") or path.stem
-            entries.append(
-                f'<li><a href="{esc(link_for(path))}">{esc(title)}</a> · {esc(language)}</li>'
+        index_links = {}
+        for path, edition in published.items():
+            title = edition["title"]
+            language = edition["language"]
+            output = destination / edition["html"]
+            output.parent.mkdir(parents=True, exist_ok=True)
+            article_folder = output.parent.relative_to(destination).as_posix()
+            index_download = article_download = ""
+            if include_pdfs:
+                pdf_path = output.with_suffix(".pdf")
+                try:
+                    pdf_path.write_bytes(export_pdf(repo, path))
+                except (OSError, ValueError, KeyError, TypeError) as error:
+                    raise ValueError(
+                        f"Could not export PDF for {path.parent.name} ({path.stem}): {error}"
+                    ) from error
+                label = (
+                    "下载 PDF" if path.stem.lower().startswith("zh") else "Download PDF"
+                )
+                index_pdf = quote(pdf_path.relative_to(destination).as_posix())
+                index_download = f' · <a href="{esc(index_pdf)}" download>{label}</a>'
+                article_download = (
+                    f' · <a href="{esc(quote(pdf_path.name))}" download>{label}</a>'
+                )
+            link = f'<a href="{esc(link_for(path))}">{esc(title)}</a> · {esc(language)}{index_download}'
+            index_links[edition["html"]] = link
+            entries.append(f"<li>{link}</li>")
+            content = (
+                f'<p><a href="../../index.html">All articles</a>{article_download}</p>'
+                + branded_article(
+                    repo, path, lambda other: link_for(other, article_folder)
+                )
             )
-            content = '<p><a href="index.html">All articles</a></p>' + branded_article(
-                repo, path, link_for
-            )
-            (destination / filename(path)).write_text(
-                page(title, content, language), encoding="utf-8"
+            output.write_text(
+                page(title, content, language, "../../style.css"), encoding="utf-8"
             )
         name = repo.config["branding"]["name"]
         listing = (
@@ -261,9 +343,31 @@ def export_html(repo, destination):
             if entries
             else "<p>No published articles.</p>"
         )
-        (destination / "index.html").write_text(
-            page(name, f"<h1>{esc(name)}</h1>{listing}"), encoding="utf-8"
+        bulletin = []
+        for change in (release or {}).get("recent_changes", []):
+            day = esc(change["date"])
+            label = "New" if change["kind"] == "new" else "Updated"
+            link = index_links[change["html"]]
+            note = f" — {esc(change['note'])}" if change.get("note") else ""
+            bulletin.append(
+                f'<li><time datetime="{day}">{day}</time> · {label} · {link}{note}</li>'
+            )
+        whats_new = (
+            "<section><h2>What’s new</h2><ul>" + "".join(bulletin) + "</ul></section>"
+            if bulletin
+            else ""
         )
-    except (OSError, ValueError, KeyError, TypeError):
+        (destination / "index.html").write_text(
+            page(name, f"<h1>{esc(name)}</h1>{whats_new}{listing}"), encoding="utf-8"
+        )
+        manifest = {
+            "version": 1,
+            "editions": list(published.values()),
+            **(release or {}),
+        }
+        (destination / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+    except BaseException:
         shutil.rmtree(destination)
         raise

@@ -132,8 +132,10 @@ class PublishingTest(unittest.TestCase):
             save_article(article, {**metadata, "author": "Alex & Casey"}, body)
 
             site = root / "site"
-            export_html(repo, site)
-            html = (site / "FIELD-000002.en-US.html").read_text(encoding="utf-8")
+            export_html(repo, site, include_pdfs=False)
+            html = (site / "articles/FIELD-000002/en-US.html").read_text(
+                encoding="utf-8"
+            )
             self.assertIn("Author: Alex &amp; Casey", html)
 
             pdf = PdfReader(BytesIO(export_pdf(repo, article)))
@@ -146,3 +148,42 @@ class PublishingTest(unittest.TestCase):
             pdf = PdfReader(BytesIO(export_pdf(repo, article)))
             self.assertIn("Alex & Casey", pdf.pages[0].extract_text())
             self.assertNotIn("Author:", pdf.pages[2].extract_text())
+
+    def test_site_downloads_only_published_editions_and_keeps_table_text(self):
+        from pypdf import PdfReader
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            collection = root / "collection"
+            shutil.copytree(Path(__file__).resolve().parents[1] / "example", collection)
+            repo = Repository(collection)
+            # The regression runs on machines without a CJK system font.
+            for article in collection.glob("articles/*/zh-CN.md"):
+                metadata, body = load_article(article)
+                save_article(article, {**metadata, "status": "draft"}, body)
+            site = root / "site"
+            export_html(repo, site)
+            self.assertEqual(
+                {path.relative_to(site).as_posix() for path in site.rglob("*.pdf")},
+                {"articles/FIELD-000001/en-US.pdf", "articles/FIELD-000002/en-US.pdf"},
+            )
+            self.assertIn(
+                'href="articles/FIELD-000001/en-US.pdf" download',
+                (site / "index.html").read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                'href="en-US.pdf" download',
+                (site / "articles/FIELD-000001/en-US.html").read_text(encoding="utf-8"),
+            )
+            pdf = PdfReader(site / "articles/FIELD-000001/en-US.pdf")
+            text = "\n".join(page.extract_text() for page in pdf.pages)
+            self.assertIn("Screen message", text)
+            self.assertIn("Unsupported format", text)
+
+            article = repo.article_path("FIELD-000002", "en-US")
+            metadata, body = load_article(article)
+            save_article(article, {**metadata, "cover_pdf": "missing.pdf"}, body)
+            failed = root / "failed"
+            with self.assertRaisesRegex(ValueError, r"FIELD-000002 \(en-US\)"):
+                export_html(repo, failed)
+            self.assertFalse(failed.exists())

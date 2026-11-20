@@ -175,16 +175,22 @@ class WorkflowTest(unittest.TestCase):
             initialize_collection(location, "Replacement", "NEW", 5, "en-US")
 
         destination = self.root.parent / "site"
-        export_html(self.repo, destination)
+        export_html(self.repo, destination, include_pdfs=False)
         index = (destination / "index.html").read_text(encoding="utf-8")
-        self.assertIn("FIELD-000001.zh-CN.html", index)
-        page = (destination / "FIELD-000001.en-US.html").read_text(encoding="utf-8")
-        self.assertIn('href="FIELD-000002.en-US.html"', page)
+        self.assertIn('href="articles/FIELD-000001/zh-CN.html"', index)
+        page = (destination / "articles/FIELD-000001/en-US.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('href="../FIELD-000002/en-US.html"', page)
+        self.assertIn('href="../../index.html"', page)
+        self.assertIn('href="../../style.css"', page)
         self.assertIn("data:image/png;base64,", page)
         self.assertNotIn('href="/article?', page)
-        self.assertFalse((destination / "FIELD-000004.en-US.html").exists())
+        self.assertNotIn("Download PDF", page)
+        self.assertFalse(list(destination.rglob("*.pdf")))
+        self.assertFalse((destination / "articles/FIELD-000004").exists())
         with self.assertRaises(FileExistsError):
-            export_html(self.repo, destination)
+            export_html(self.repo, destination, include_pdfs=False)
 
     def test_renumber_requires_force_and_preserves_editions(self):
         old, new = "FIELD-000001", "SUPPORT-00001"

@@ -21,6 +21,7 @@ from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
     Image,
+    LongTable,
     PageBreak,
     PageTemplate,
     Paragraph,
@@ -272,6 +273,37 @@ class ArticleImage(Image):
         super().draw()
 
 
+def article_table(doc, block, width):
+    alignments = {"AlignCenter": TA_CENTER, "AlignRight": TA_RIGHT}
+    headers = block["header_rows"]
+    columns = len(block["alignments"])
+    styles = [
+        ParagraphStyle(
+            alignment,
+            parent=doc.styles["body"],
+            alignment=alignments.get(alignment, TA_LEFT),
+            spaceAfter=0,
+        )
+        for alignment in block["alignments"]
+    ]
+    return LongTable(
+        [
+            [Paragraph(escape(cell), style) for cell, style in zip(row, styles)]
+            for row in block["rows"]
+        ],
+        colWidths=[width / columns] * columns,
+        repeatRows=headers,
+        splitInRow=1,
+        hAlign="LEFT",
+        spaceAfter=doc.styles["body"].spaceAfter,
+        style=[
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BACKGROUND", (0, 0), (-1, headers - 1), QUOTE),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.4, HexColor("#c7d1d8")),
+        ],
+    )
+
+
 def make_story(doc, blocks, depth):
     flow = []
     for index, block in enumerate(blocks):
@@ -281,6 +313,9 @@ def make_story(doc, blocks, depth):
         padding = 5 * doc.unit
         marker, gutter = block.get("marker", (None, 0))
         gutter *= doc.unit
+        if kind == "table":
+            flow.append(article_table(doc, block, doc.measure))
+            continue
         if kind == "image":
             inset = indent + (12 * doc.unit if quoted else 0)
             available = doc.measure - inset - (padding if quoted else 0)

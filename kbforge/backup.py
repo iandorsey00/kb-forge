@@ -1,8 +1,12 @@
 """Archive complete collection folders without changing their contents."""
 
 import os
+from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
+import re
 from stat import S_ISDIR, S_ISREG
+from tempfile import TemporaryDirectory
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 # Windows junctions can report directory mode even though they redirect the walk.
@@ -96,3 +100,59 @@ def backup_collections(source, destination, *, all_collections=False):
             destination.unlink()
             raise
     return len(roots)
+
+
+def backup_schedule(repo):
+    """Read an optional per-collection schedule and resolve its archive directory."""
+    if "scheduled_backup" not in repo.config:
+        return None
+    config = repo.config["scheduled_backup"]
+    if not isinstance(config, dict):
+        raise ValueError("scheduled_backup must specify directory and interval_hours.")
+    directory = config.get("directory")
+    hours = config.get("interval_hours")
+    if (
+        not isinstance(directory, str)
+        or not directory.strip()
+        or type(hours) is not int
+        or hours < 1
+    ):
+        raise ValueError(
+            "Set scheduled_backup.directory and a positive integer interval_hours."
+        )
+    target = (repo.root / Path(directory).expanduser()).resolve()
+    if target.is_relative_to(repo.root):
+        raise ValueError("Save scheduled backups outside the collection.")
+    return target, hours
+
+
+def run_scheduled_backup(repo, schedule, *, now=None):
+    target, hours = schedule
+    now = now or datetime.now(timezone.utc)
+    # A source-specific prefix lets schedules share the same archive directory.
+    identity = sha256(os.fsencode(os.path.normcase(repo.root))).hexdigest()[:16]
+    prefix = f"kbforge-{identity}-"
+    stamp_format = "%Y%m%dT%H%M%SZ"
+    target.mkdir(exist_ok=True)
+    lock = target / f".{prefix}lock"
+    lock.mkdir()
+    try:
+        stamps = []
+        for path in target.glob(f"{prefix}*.zip"):
+            match = re.fullmatch(re.escape(prefix) + r"(\d{8}T\d{6}Z)\.zip", path.name)
+            if match and path.is_file() and not path.is_symlink():
+                stamps.append(
+                    datetime.strptime(match[1], stamp_format).replace(
+                        tzinfo=timezone.utc
+                    )
+                )
+        if stamps and (now - max(stamps)).total_seconds() < hours * 3600:
+            return None
+        output = target / f"{prefix}{now.strftime(stamp_format)}.zip"
+        with TemporaryDirectory(dir=target, prefix=".backup-") as temporary:
+            staged = Path(temporary) / output.name
+            backup_collections(repo.root, staged)
+            staged.rename(output)
+        return output
+    finally:
+        lock.rmdir()

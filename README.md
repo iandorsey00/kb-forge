@@ -4,6 +4,8 @@ English · [简体中文](README.zh-CN.md)
 
 KB Forge is a planned toolkit for creating, organizing, validating, and publishing portable knowledge bases. Articles use Markdown with YAML front matter, and images and attachments are stored as ordinary files. The same collection should remain readable and maintainable with ordinary tools if an organization replaces KB Forge.
 
+![KB Forge showing a branded troubleshooting article from the fictional Northshore Field Services example collection](docs/images/kb-forge-example.png)
+
 ## Documentation
 
 English and Simplified Chinese (`zh-CN`) documentation are required for the MVP and for each release that changes a documented workflow. Both editions should be complete, easy to navigate, and linked to each other. Update both editions in the same change when behavior, configuration, or the standard changes.
@@ -56,7 +58,7 @@ python3 -m pip install -r requirements-pdf.txt
 python3 -m kbforge demo-work --export-pdf FIELD-000002 en-US --output article.pdf
 ```
 
-You can also use **Publish → Open branded PDF**. See the [publishing settings](docs/standard.md#branded-publishing) for cover art, page artwork, and Chinese fonts. Paginated export supports headings, paragraphs, lists, code blocks, and local images. Browser print remains available for Markdown tables and rich inline formatting.
+You can also use **Publish → Open branded PDF**. See the [publishing settings](docs/standard.md#branded-publishing) for cover art, page artwork, and Chinese fonts. Paginated export supports headings, paragraphs, lists, code blocks, local images, and Markdown pipe tables. Table cells use plain text, with alternative text in place of images. Browser print preserves rich inline formatting.
 
 ### Move a theme to another collection
 
@@ -120,13 +122,104 @@ Export the relevant pictures from the source presentation, or copy a screenshot 
 
 For images that belong to a list item, place the cursor on the line with its list marker. KB Forge picks up the indentation. To override it, set **Indentation for list images** to the number of characters before the item text, counting the marker. For example, use 3 spaces for `1. Step` and 2 for `- Step`. Adjust individual widths afterward with `{width=60%}`. See the [Markdown example](docs/standard.md#images-links-and-branding). Validation can identify unreferenced assets if you abandon a draft.
 
-### Export a static HTML site
+### Export a static site
 
 ```sh
-python3 -m kbforge work-collection --export-html --output published-site
+python3 -m kbforge work-collection --export-site --output published-site
 ```
 
-Use a new output directory each time. The output includes an index, a shared stylesheet, and one branded page per published edition. Images are embedded and links between exported articles are relative. Open `index.html` locally or copy the entire directory to an approved internal static host. For SharePoint, upload PDFs to a document library or link to the separately hosted site from a modern page.
+Install the PDF dependencies above and use a new output directory. The output includes an index, a shared stylesheet, a `manifest.json` listing edition IDs, languages, revisions, and relative output paths, and a branded HTML page and PDF for each published language edition. Each edition's files sit side by side at `articles/<id>/<language>.html` and `articles/<id>/<language>.pdf`, relative to the output directory. The homepage is `index.html` at the root, and both it and each article page link to the matching PDF. Images are embedded in the HTML, and site links are relative. Open `index.html` locally or copy the entire output directory to a static web host.
+
+If PDF generation fails, the export reports the article ID and language and removes the incomplete output. Chinese PDFs require a font with the needed glyphs. Use `--export-site --html-only` to omit PDFs and their links. That mode works without the PDF dependencies.
+
+### Publish and roll back a site
+
+Add named filesystem destinations to the collection's `kbforge.yaml`:
+
+```json
+"publication_destinations": {
+  "preview": "../preview-site",
+  "team": "/path/to/mounted-share/team-site"
+}
+```
+
+Use an absolute path or one relative to the collection directory. Each destination needs its own empty folder or a new folder under an existing parent. A local folder, mounted network share, or locally synced folder works through the same interface. Keep the destinations separate from the collection source.
+
+```sh
+python3 -m kbforge work-collection --publish-site preview
+python3 -m kbforge work-collection --publish-site preview --apply
+python3 -m kbforge work-collection --rollback-site preview
+python3 -m kbforge work-collection --rollback-site preview --apply
+python3 -m kbforge work-collection --copy-site preview --output offline-site
+```
+
+Preview compares published editions with the destination's current release. Apply builds a complete snapshot in `releases/<release-id>/` and then switches the destination's root `index.html` to it. Share the root homepage as the stable entry point. The release homepage's **What’s new** section lists up to ten recently published or updated editions. Add an optional `release_note` string to an edition's front matter for a reader-facing summary. Rollback chooses the active release's predecessor by default, or you can specify `--release ID`. A rollback changes the active site without changing the source collection. Old release URLs remain readable wherever the destination is served, so use host access controls and remove any retained snapshot that must be withdrawn.
+
+`--copy-site` copies the current published snapshot for offline reading. A named destination receives one-way publishes from its source collection. For synced folders, visibility on other machines depends on the sync tool.
+
+### Collaborate on an editable site
+
+Use one dedicated folder accessible to all editors, such as a mounted network share with normal file locking and atomic rename support. The folder contains `site/` for readers and `source/` for editors. Serve only `site/` and give editors access to the collaboration folder. Source snapshots include drafts, the ID registry, and branding. Each editor configures their own backup and named publishing paths.
+
+The first publisher creates the shared site from their existing collection:
+
+```sh
+python3 -m kbforge work-collection --push-site /path/to/team-kb --apply
+```
+
+Another editor clones it into a fresh local directory and opens the clone in KB Forge:
+
+```sh
+python3 -m kbforge --clone-site /path/to/team-kb --output my-editable-kb
+python3 -m kbforge my-editable-kb
+```
+
+After saving edits, preview and apply the merge. Set an article's status to `published` to include it on the reader site. Add `--html-only` when pushing if the reader site only needs HTML.
+
+```sh
+python3 -m kbforge my-editable-kb --push-site /path/to/team-kb
+python3 -m kbforge my-editable-kb --push-site /path/to/team-kb --apply
+```
+
+Changes to different files merge automatically. When two editors independently allocate the same new ID, KB Forge keeps the shared ID, moves the incoming article to the next free ID, and updates its editions, conventional relative Markdown links, and `related` references. Preview shows the proposed mapping. Both editors changing the same existing file differently stops the push and lists the conflicting paths. Clone the latest shared version into a fresh directory, reconcile those files there, and carry over the rest of your edits before pushing. A successful push also tells you to clone again if other editors' changes or ID reassignment made the shared snapshot differ from your working copy. Your local article files are preserved.
+
+### Distribute a site through OneDrive or SharePoint
+
+| What readers or editors need | What to share |
+| --- | --- |
+| A browsable site in a web browser | Deploy the full export to an approved static web host. Link to its homepage from SharePoint. |
+| PDFs they can open from the document library | Upload the published PDFs to a SharePoint library or a shared OneDrive folder. |
+| The complete site for offline reading | Share the complete export folder or a ZIP of it. Readers sync or extract the whole folder and open the local `index.html`. |
+| An editable collection | Share the collaboration folder with editors only. They sync the folder and clone from its local path. |
+
+**OneDrive.** Upload or copy the exported folder into OneDrive and share it with the intended readers. Keep its folder structure intact so the article, stylesheet, and PDF links work after download. For an editable clone, the shared folder must be the collaboration root containing both `site/` and `source/`. An eligible internal recipient can use **Add shortcut to My files** and the OneDrive sync app to get a folder in Finder or File Explorer. Wait until the release has synced and its files are available locally, then run the command below. Use the recipient's actual filesystem path. [Microsoft's OneDrive shared-folder guide](https://support.microsoft.com/en-us/onedrive/add-shortcuts-to-shared-folders-in-onedrive)
+
+```sh
+python3 -m kbforge --clone-site "/path/to/OneDrive/team-kb" --output my-editable-kb
+```
+
+**SharePoint Online.** Open the document library and choose **Upload** to add the PDFs, export folder, or ZIP. For offline reading or cloning from an editors-only library, use **Add shortcut to OneDrive** or **Sync** where available, then work from the resulting local path. SharePoint Online's default file handling may download or preview HTML as content. Use a static host for an interactive site with working navigation and CSS. [Upload to a library](https://support.microsoft.com/en-us/sharepoint/documents-and-library/upload-files-and-folders-to-a-library) · [Sync a library](https://support.microsoft.com/en-us/onedrive/sync/sharepoint-training/sync-sharepoint-files-and-folders) · [SharePoint HTML file handling](https://learn.microsoft.com/en-us/sharepoint/dev/solution-guidance/security-permissivesetting)
+
+Use **one designated publisher on one machine** for destinations reached through OneDrive sync, including synced SharePoint libraries. Sync uses local copies, so KB Forge's push lock cannot coordinate concurrent pushes across machines. For multiple publishers, use a mounted share where all editors operate on the same filesystem with atomic directory creation and rename. Keep the collaboration root and `source/` restricted to editors. When readers need access, share the exported folder, PDFs, or `site/` separately.
+
+### Schedule collection backups
+
+Add a schedule to `kbforge.yaml`. This example backs up the collection every 24 hours to a sibling directory. Use an existing parent folder.
+
+```json
+"scheduled_backup": {
+  "directory": "../collection-backups",
+  "interval_hours": 24
+}
+```
+
+While KB Forge is running, it checks at startup and once a minute. It creates a verified ZIP on the first run, then another when the configured number of hours has passed since the last archive. Each ZIP is retained. To check the schedule while the app is closed, run the following command from the KB Forge checkout using cron, Windows Task Scheduler, or another OS scheduler. Use the full paths to your Python interpreter and collection when setting up the task.
+
+```sh
+python3 -m kbforge work-collection --run-scheduled-backup
+```
+
+The editor is a loopback service for one local operator. Share exported sites with multiple readers, and coordinate editing of the source collection separately.
 
 ### Manage fonts, identifiers, and releases
 

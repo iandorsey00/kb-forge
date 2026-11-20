@@ -4,6 +4,8 @@
 
 KB Forge 是一套规划中的工具，用于创建、组织、校验和发布可迁移的知识库。文章采用 Markdown 编写，元数据保存在文件开头的 YAML 区块中，图片和附件以普通文件保存。即使组织日后更换 KB Forge，也应能使用常见工具阅读和维护原有知识库。
 
+![KB Forge 显示虚构示例知识库 Northshore Field Services 中带有品牌样式的故障排查文章](docs/images/kb-forge-example.png)
+
 ## 文档
 
 最小可用版本（MVP）及每次改变文档所述操作流程的发布，都必须提供完整的英文和简体中文（`zh-CN`）文档。两个版本应便于查找，并提供相互跳转的链接。产品行为、配置或文档标准发生变化时，应在同一次变更中更新两个版本。
@@ -56,7 +58,7 @@ python3 -m pip install -r requirements-pdf.txt
 python3 -m kbforge demo-work --export-pdf FIELD-000002 en-US --output article.pdf
 ```
 
-也可以在 **Publish → Open branded PDF** 中查看结果。有关封面、品牌图片和中文字体，请参阅[发布设置](docs/standard.zh-CN.md#品牌样式与发布)。分页导出支持标题、段落、列表、代码块和本地图片。可通过浏览器打印保留 Markdown 表格及丰富的行内样式。
+也可以在 **Publish → Open branded PDF** 中查看结果。有关封面、品牌图片和中文字体，请参阅[发布设置](docs/standard.zh-CN.md#品牌样式与发布)。分页导出支持标题、段落、列表、代码块、本地图片及使用竖线编写的 Markdown 表格。表格单元格以纯文本呈现，图片以替代文字显示。通过浏览器打印可以保留丰富的行内样式。
 
 ### 将主题迁移到另一个知识库
 
@@ -120,13 +122,104 @@ python3 -m kbforge work-collection
 
 如果图片属于列表项，请将光标放在包含列表标记的那一行，KB Forge 会自动设置缩进。如需手动调整，请按列表项正文前的字符数设置 **Indentation for list images**（列表图片缩进），将列表标记计入。比如，`1. 步骤` 缩进 3 个空格，`- 步骤` 缩进 2 个空格。之后可用 `{width=60%}` 调整单张图片的宽度。参阅 [Markdown 示例](docs/standard.zh-CN.md#图片链接和品牌样式)。如果放弃草稿，可通过校验查找未引用的资源。
 
-### 导出静态 HTML 站点
+### 导出静态站点
 
 ```sh
-python3 -m kbforge work-collection --export-html --output published-site
+python3 -m kbforge work-collection --export-site --output published-site
 ```
 
-每次导出请使用新目录。结果包括索引页、共享样式表，以及每个已发布语言版本的品牌页面。图片嵌入页面，文章链接使用相对路径。可在本地打开 `index.html`，或将整个目录复制到经批准的内部静态站点。对于 SharePoint，可将 PDF 上传到文档库，或在现代页面中链接到单独托管的站点。
+请先安装上文的 PDF 依赖，并使用新目录。结果包括索引页、共享样式表、记录文章编号、语言、修订号及相对输出路径的 `manifest.json`，以及每个已发布语言版本的品牌 HTML 页面和 PDF。以输出目录为基准，每个语言版本的文件并排保存在 `articles/<id>/<language>.html` 和 `articles/<id>/<language>.pdf`。首页为根目录下的 `index.html`，首页和各文章页均提供对应 PDF 的下载链接。图片嵌入 HTML 页面，站内链接使用相对路径。可在本地打开 `index.html`，也可将整个输出目录部署到静态网站主机。
+
+如果 PDF 生成失败，导出会报告文章编号和语言，并删除未完成的输出。中文 PDF 需要包含所需汉字的字体。使用 `--export-site --html-only` 可省略 PDF 及其链接。此模式无需安装 PDF 依赖。
+
+### 发布和回滚站点
+
+在知识库的 `kbforge.yaml` 中配置具名的文件系统发布目标。
+
+```json
+"publication_destinations": {
+  "preview": "../preview-site",
+  "team": "/path/to/mounted-share/team-site"
+}
+```
+
+可以使用绝对路径，也可以使用相对于知识库目录的路径。每个目标须使用专用空目录，或在现有父目录下使用一个新目录。本地目录、已挂载的网络共享以及同步到本机的目录均可作为发布目标。发布目标须与知识库源目录分开。
+
+```sh
+python3 -m kbforge work-collection --publish-site preview
+python3 -m kbforge work-collection --publish-site preview --apply
+python3 -m kbforge work-collection --rollback-site preview
+python3 -m kbforge work-collection --rollback-site preview --apply
+python3 -m kbforge work-collection --copy-site preview --output offline-site
+```
+
+预览会比较拟发布的文章版本与目标站点的当前发布版本。执行发布时，先在 `releases/<release-id>/` 中生成完整快照，再将目标根目录的 `index.html` 切换至该快照。可将根目录首页作为固定入口分享。发布首页的 **What’s new** 区域最多显示十条近期新发布或更新的文章版本。可在文章元数据中添加可选的 `release_note` 字符串，向读者说明变更。回滚默认选择当前发布版本的上一个版本，也可通过 `--release ID` 指定。回滚只切换站点版本，源知识库仍由原目录管理。只要服务仍提供旧快照，其网址仍然可以访问。如须撤回旧内容，请使用主机访问控制并移除相关快照。
+
+`--copy-site` 复制当前发布快照，供离线阅读。具名发布目标接收来自源知识库的单向发布。使用同步目录时，其他设备上的可见时间取决于同步工具。
+
+### 协作编辑站点
+
+请使用所有编辑人员均可访问的专用目录，例如支持文件锁和原子重命名的已挂载网络共享。目录中的 `site/` 供读者访问，`source/` 供编辑人员使用。请仅通过网站提供 `site/`，并向编辑人员授予协作目录的访问权限。源快照包含草稿、编号登记表和品牌资源。每位编辑人员可单独配置备份和具名发布路径。
+
+首位发布者从现有知识库创建共享站点。
+
+```sh
+python3 -m kbforge work-collection --push-site /path/to/team-kb --apply
+```
+
+其他编辑人员将共享源克隆到新的本地目录，再用 KB Forge 打开。
+
+```sh
+python3 -m kbforge --clone-site /path/to/team-kb --output my-editable-kb
+python3 -m kbforge my-editable-kb
+```
+
+保存更改后，先预览合并，再执行发布。将文章状态设为 `published` 后才会出现在读者站点上。如果读者站点只需要 HTML，可在推送时添加 `--html-only`。
+
+```sh
+python3 -m kbforge my-editable-kb --push-site /path/to/team-kb
+python3 -m kbforge my-editable-kb --push-site /path/to/team-kb --apply
+```
+
+对不同文件的修改会自动合并。若两人独立分配了相同的新编号，KB Forge 会保留共享站点中的编号，为传入文章分配下一个可用编号，并更新各语言版本、常规 Markdown 相对链接和 `related` 引用。预览会显示编号对应关系。若两人对同一现有文件进行了不同修改，推送会停止并列出冲突路径。请将最新共享版本克隆到新目录，在其中手动合并冲突，并带入其他本地修改后再次推送。若其他人的更改或重新编号导致共享快照与本地工作副本不同，成功推送后也会提示重新克隆。本地文章文件会保留。
+
+### 通过 OneDrive 或 SharePoint 分发站点
+
+| 读者或编辑人员的需求 | 共享方式 |
+| --- | --- |
+| 在浏览器中浏览完整站点 | 将整个导出目录部署到经批准的静态网站主机，并在 SharePoint 页面添加首页链接。 |
+| 在文档库中打开 PDF | 将已发布的 PDF 上传到 SharePoint 文档库或 OneDrive 共享文件夹。 |
+| 离线浏览完整站点 | 共享整个导出目录或 ZIP。读者同步或解压整个目录后，打开本地的 `index.html`。 |
+| 获取可编辑的知识库 | 仅向编辑人员共享协作目录。编辑人员同步目录后，从本地路径克隆。 |
+
+**OneDrive。** 将导出的目录上传或复制到 OneDrive，并与指定读者共享。下载时须保留目录结构，以便文章、样式表和 PDF 链接正常使用。如果要克隆可编辑的知识库，共享目录应为同时包含 `site/` 和 `source/` 的协作根目录。符合条件的组织内部用户可使用 **将快捷方式添加到我的文件** 和 OneDrive 同步应用，在 Finder 或文件资源管理器中访问该目录。等待版本同步完成且文件可在本地访问后，使用接收方的实际路径运行以下命令。[Microsoft 的 OneDrive 共享文件夹指南](https://support.microsoft.com/en-us/onedrive/add-shortcuts-to-shared-folders-in-onedrive)
+
+```sh
+python3 -m kbforge --clone-site "/path/to/OneDrive/team-kb" --output my-editable-kb
+```
+
+**SharePoint Online。** 在文档库中选择 **上传**，添加 PDF、导出目录或 ZIP。若要离线浏览，或从仅限编辑人员访问的文档库克隆，可在支持时使用 **将快捷方式添加到 OneDrive** 或 **同步**，随后访问对应的本地路径。SharePoint Online 的默认文件处理方式可能会下载 HTML 或将其作为文件内容预览。要在浏览器中浏览带有导航和 CSS 的站点，请使用静态网站主机。[上传文件到文档库](https://support.microsoft.com/en-us/sharepoint/documents-and-library/upload-files-and-folders-to-a-library) · [同步文档库](https://support.microsoft.com/en-us/onedrive/sync/sharepoint-training/sync-sharepoint-files-and-folders) · [SharePoint 的 HTML 文件处理方式](https://learn.microsoft.com/en-us/sharepoint/dev/solution-guidance/security-permissivesetting)
+
+对于通过 OneDrive 同步访问的目录（包括同步的 SharePoint 文档库），请**指定一位发布者，并从同一台设备推送**。同步软件使用本地副本，因此 KB Forge 的推送锁无法协调不同设备上的并发推送。若需要多位发布者，请使用所有编辑人员都在同一文件系统上操作，并支持原子创建目录及重命名的已挂载网络共享。协作根目录和 `source/` 仅供编辑人员访问。需要向读者分发时，请另行共享导出目录、PDF 或 `site/`。
+
+### 定时备份知识库
+
+在 `kbforge.yaml` 中添加备份计划。以下示例每隔 24 小时备份一次，将文件保存至与知识库并列的目录。父目录须已存在。
+
+```json
+"scheduled_backup": {
+  "directory": "../collection-backups",
+  "interval_hours": 24
+}
+```
+
+KB Forge 启动时会检查一次，运行期间每分钟检查一次。首次运行会创建并校验 ZIP，之后在距上次备份达到指定小时数时创建新备份。每个 ZIP 都会保留。应用关闭时，可使用 cron、Windows 任务计划程序或其他系统调度工具，在 KB Forge 项目目录中运行以下命令。配置任务时请填写 Python 解释器和知识库的绝对路径。
+
+```sh
+python3 -m kbforge work-collection --run-scheduled-backup
+```
+
+编辑器仅监听本机地址，供单人操作。导出的站点可以提供给多位读者，源知识库的编辑则需另行协调。
 
 ### 管理字体、编号与版本
 
