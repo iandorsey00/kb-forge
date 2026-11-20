@@ -19,6 +19,10 @@ form .grid { margin:.7rem 0; }
 label { display:block; font-weight:600; }
 input,select,textarea { display:block; width:100%; max-width:100%; font:inherit; padding:.48rem .6rem; border-radius:6px; border:1px solid #92a8a1; background:white; color:var(--ink); margin:.3rem 0 .8rem; }
 textarea { min-height:12rem; font: .9rem/1.55 ui-monospace,monospace; }
+textarea[name="body"] { min-height:clamp(24rem, 62vh, 52rem); resize:vertical; }
+#image-queue { max-height:22rem; overflow:auto; }
+.image-entry { display:flex; gap:.75rem; align-items:center; }
+.image-entry label { flex:1; min-width:0; overflow-wrap:anywhere; }
 button,.button { padding:.55rem .9rem; display:inline-block; border:1px solid var(--accent); border-radius:6px; background:var(--accent); color:white; font:inherit; cursor:pointer; text-decoration:none; }
 .button.secondary { background:white; color:var(--accent); }
 .actions { display:flex; flex-wrap:wrap; gap:.6rem; align-items:center; margin-bottom:1rem; }
@@ -32,6 +36,10 @@ pre { padding:.8rem; white-space:pre-wrap; }
 .publication header { border-top:5px solid var(--brand); padding:1rem 0; border-bottom:1px solid var(--line); }
 .publication header h1 { margin:.8rem 0 .4rem; color:var(--brand); }
 .publication img { max-width:100%; height:auto; }
+.publication blockquote, .publication .note, .publication .tip,
+.publication .important, .publication .warning, .publication .caution {
+  margin: .8rem 0; padding: .35rem 1rem; border-inline-start:3px solid var(--brand); background:#edf1f5;
+}
 .publication .logo { max-height:45px; max-width:160px; display:block; margin-bottom:.5rem; }
 .publication h2 { color:var(--brand); margin-top:1.6rem; }
 .document-control { font-size:.85rem; color:var(--muted); }

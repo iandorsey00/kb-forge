@@ -133,9 +133,11 @@ class WorkflowTest(unittest.TestCase):
             filename="Draft.png",
             image=data,
             alt="Draft screenshot",
+            width="60",
         )
         self.assertEqual(
-            json.loads(attached)["markdown"], "![Draft screenshot](assets/draft.png)"
+            json.loads(attached)["markdown"],
+            "![Draft screenshot](assets/draft.png){width=60%}",
         )
         self.assertEqual(path.read_bytes(), saved)
         self.assertEqual((path.parent / "assets/draft.png").read_bytes(), image)
@@ -232,6 +234,18 @@ class WorkflowTest(unittest.TestCase):
             import_package(self.repo, source)
         self.assertFalse(self.repo.path("articles", "IMPORT-00002").exists())
         self.assertEqual(self.repo.path("registry", "ids.yaml").read_bytes(), before)
+
+    def test_package_can_fill_a_gap_below_allocation_start(self):
+        article_id = "FIELD-000001"
+        source = self.root.parent / "recovered"
+        shutil.move(self.repo.path("articles", article_id), source)
+        registry = self.repo.path("registry", "ids.yaml")
+        reservations = json.loads(registry.read_text(encoding="utf-8"))
+        del reservations[article_id]
+        registry.write_text(json.dumps(reservations), encoding="utf-8")
+        self.repo.config["identifiers"]["start"] = 2
+        self.assertEqual(import_package(self.repo, source)[0], article_id)
+        self.assertTrue(self.repo.article_path(article_id, "en-US").is_file())
 
     def test_author_migration_previews_and_preserves_existing_content(self):
         first = self.repo.article_path("FIELD-000001", "en-US")

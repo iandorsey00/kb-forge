@@ -21,7 +21,6 @@ from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
     Image,
-    KeepTogether,
     PageBreak,
     PageTemplate,
     Paragraph,
@@ -35,6 +34,7 @@ from .repository import article_author
 FONT_LOCK = Lock()
 INK = HexColor("#202020")
 MUTED = HexColor("#555555")
+QUOTE = HexColor("#edf1f5")
 
 
 def document_fonts(theme, text):
@@ -93,11 +93,12 @@ class Publication(BaseDocTemplate):
         self.unit = width / 419.5
         self.font, bold = fonts
         self.styles = {}
+        body_size = theme.get("body_font_size", 11) / self.unit
         for key, f, font_size, leading, before, after in (
             ("title", bold, 21, 26, 0, 14),
-            ("section", bold, 15, 18, 9, 5),
-            ("step", bold, 11, 14, 7, 4),
-            ("body", self.font, 10.5, 14, 0, 5),
+            ("section", bold, max(12, body_size + 2.5), max(15, body_size + 5), 9, 5),
+            ("step", bold, body_size + 1, body_size * 1.35, 7, 4),
+            ("body", self.font, body_size, body_size * 1.38, 0, 5),
             ("caption", self.font, 8, 11, 3, 7),
             ("code", self.font, 9, 12, 0, 7),
         ):
@@ -252,26 +253,64 @@ class Publication(BaseDocTemplate):
             self.notify("TOCEntry", (level, escape(title), self.page, destination))
 
 
+class ArticleImage(Image):
+    def __init__(self, path, inset, marker, style):
+        super().__init__(path)
+        self.inset = inset
+        self.marker = marker
+        self.style = style
+
+    def draw(self):
+        if self.marker:
+            text, gutter = self.marker
+            self.canv.setFillColor(INK)
+            self.canv.setFont(self.style.fontName, self.style.fontSize)
+            self.canv.drawString(
+                self.inset - gutter, self.drawHeight - self.style.fontSize, text
+            )
+        self.canv.translate(self.inset, 0)
+        super().draw()
+
+
 def make_story(doc, blocks, depth):
     flow = []
     for index, block in enumerate(blocks):
         kind, text = block["kind"], block["text"]
+        indent = min(block.get("indent", 0) * doc.unit, doc.measure * 0.55)
+        quoted = block.get("quoted")
+        padding = 5 * doc.unit
+        marker, gutter = block.get("marker", (None, 0))
+        gutter *= doc.unit
         if kind == "image":
-            image = Image(block["image"])
-            scale = min(
-                doc.measure / image.imageWidth, 150 * doc.unit / image.imageHeight
+            inset = indent + (12 * doc.unit if quoted else 0)
+            available = doc.measure - inset - (padding if quoted else 0)
+            width = block.get("width")
+            image = ArticleImage(
+                block["image"],
+                inset,
+                (marker, gutter) if marker else None,
+                doc.styles["body"],
             )
+            if width is None:
+                scale = min(
+                    available / image.imageWidth, 150 * doc.unit / image.imageHeight
+                )
+            else:
+                scale = min(
+                    available * width / 100 / image.imageWidth,
+                    doc.pagesize[1] * 0.6 / image.imageHeight,
+                )
             image.drawWidth = image.imageWidth * scale
             image.drawHeight = image.imageHeight * scale
             image.hAlign = "LEFT"
-            group = [image, Paragraph(escape(text), doc.styles["caption"])]
-            if (
-                flow
-                and isinstance(flow[-1], Paragraph)
-                and flow[-1].style is doc.styles["body"]
-            ):
-                group.insert(0, flow.pop())
-            flow.append(KeepTogether(group))
+            if text:
+                image.keepWithNext = True
+            flow.append(image)
+            if text:
+                caption = ParagraphStyle(
+                    "image-caption", parent=doc.styles["caption"], leftIndent=inset
+                )
+                flow.append(Paragraph(escape(text), caption))
             continue
         level = block.get("level", 0)
         key = (
@@ -280,22 +319,22 @@ def make_story(doc, blocks, depth):
             else ("code" if kind == "code" else "body")
         )
         style = doc.styles[key]
-        list_depth = block.get("list_depth", 0)
-        marker = block.get("marker")
-        if list_depth:
-            # Draw the marker in the gutter and align wrapped lines with the item text.
-            indent = 12 * min(list_depth, 5) * doc.unit
-            marker_width = pdfmetrics.stringWidth(
-                marker or "•", style.fontName, style.fontSize
-            )
+        if indent or quoted:
+            inset = indent + (12 * doc.unit if quoted else 0)
             style = ParagraphStyle(
-                "list-item",
+                "indented",
                 parent=style,
                 bulletFontName=style.fontName,
                 bulletFontSize=style.fontSize,
-                bulletIndent=indent,
-                leftIndent=indent + max(14 * doc.unit, marker_width + 5 * doc.unit),
+                bulletIndent=inset - gutter,
+                leftIndent=inset,
             )
+            if quoted and kind != "code":
+                style.backColor = QUOTE
+                style.rightIndent = padding
+                style.borderPadding = (padding / 2, padding, padding / 2, padding)
+                style.spaceBefore = max(style.spaceBefore, padding)
+                style.spaceAfter = max(style.spaceAfter, padding)
         if kind == "code":
             node = XPreformatted(escape(text), style)
         else:

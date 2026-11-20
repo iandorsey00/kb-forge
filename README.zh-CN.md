@@ -20,7 +20,7 @@ KB Forge 是一套规划中的工具，用于创建、组织、校验和发布�
 
 ## 运行最小可用版本
 
-安装 Python 3.11 或更高版本和 Pandoc，并确认可在终端中运行这两个程序。导出 PDF 时请使用较新版本的 Chromium 浏览器。无需安装其他 Python 软件包，也无需云端账户。
+安装 Python 3.11 或更高版本，以及支持 GFM `attributes` 扩展的新版 Pandoc（可运行 `pandoc --list-extensions=gfm` 确认）。确保终端可以运行这两个程序。工作区无需云端账户或额外的 Python 软件包。分页 PDF 渲染器使用可选依赖。
 
 在项目根目录中复制演示资料。应用会直接修改所打开的知识库。
 
@@ -34,7 +34,7 @@ python3 -m kbforge demo-work
 ### 体验演示流程
 
 1. 打开 **New article**（新建文章）。选择 **Procedure**（操作规程），将来源保持为 **New article**，填写标题、负责人和未来的复审日期，再添加一个便于搜索的标签，例如 `demo-cable`。点击 **Create draft**（创建草稿）。在刚复制的演示资料中，新文章编号为 `FIELD-000005`。
-2. 在 **Purpose**（目的）和 **Steps**（操作步骤）下填写正文。将光标移到需要插入图片的位置，选择 PNG 或 JPEG 图片并填写描述，再点击 **Attach image**（添加图片）。最后点击 **Save changes**（保存更改），一并保存正文和图片引用。
+2. 在 **Purpose**（目的）和 **Steps**（操作步骤）下填写正文。将光标移到需要插入图片的上一行，选择 PNG 或 JPEG 图片并填写描述，再点击 **Attach images**（添加图片）。最后点击 **Save changes**（保存更改），一并保存正文和图片引用。
 3. 在 **Catalog**（目录）中搜索 `demo-cable`。打开文章，检查品牌样式和图片。通过 **Validation**（校验）查找问题。演示资料中的练习草稿故意缺少负责人、必要章节和图片，且已超过复审日期。
 4. 点击 **Publish**（发布），再点击 **Print or save as PDF**（打印或另存为 PDF）。在 Chromium 中选择“另存为 PDF”，关闭浏览器自带的页眉页脚，并在保存前检查预览。打印样式会提供 A4 页边距、页码和带品牌样式的标题区。可打开 `FIELD-000001` 的中文版，检查汉字和截图是否清晰。如果预览中缺少汉字，请安装系统简体中文字体。
 5. 用文本编辑器打开 `demo-work/articles/FIELD-000005/en-US.md`，查看文件开头的元数据和图片相对链接。直接打开该文章 `assets` 目录中的 PNG 或 JPEG 图片。
@@ -45,7 +45,7 @@ python3 -m kbforge demo-work
 
 参阅 [KB Forge 文档标准](docs/standard.zh-CN.md)，了解文件结构、元数据、文章生命周期、译文管理及迁移方法。[演示配置](example/kbforge.yaml) 提供了编号格式、文章模板和组织品牌样式的实例。
 
-最小可用版本仅监听本机地址，适合单人在本地维护一个知识库。浏览器界面为英文，PDF 通过浏览器打印对话框导出。有关本地编号分配、Markdown 和导入的限制，请参阅文档标准。
+工作区仅监听本机地址，适合单人在本地维护知识库。浏览器界面为英文。可通过下文所述的分页渲染器或浏览器打印对话框导出 PDF。有关本地编号分配、Markdown 和导入的限制，请参阅文档标准。
 
 ### 发布带品牌样式的分页 PDF
 
@@ -78,11 +78,30 @@ python3 -m kbforge demo-work --export-pdf FIELD-000002 en-US --output article.pd
 
 ZIP 包含 `workspace`、`branding` 和 `publishing` 设置及其引用的资源。文章、编号、模板和文章专用 PDF 封面保留在各自的知识库中。如需备份目标主题，请先将其导出到另一个 ZIP。导入会替换这三个设置区块；若已有同名但内容不同的资源，导入会在更新设置前停止。
 
-### 在应用中更新
+### 备份与恢复知识库
 
-如果通过 Git 工作副本运行 KB Forge，请选择 **Updates → Check and install update**。KB Forge 会获取当前分支所跟踪的远程分支，并仅通过快进方式更新。更新前请保存打开的文章，并提交或暂存工作副本中的本地更改。如果当前分支含有上游没有的提交，请先通过 Git 处理。
+先保存文章并停止 KB Forge，再从应用目录运行以下任一命令。请选择尚未使用的 ZIP 文件名，并保存到知识库以外的现有目录。
 
-更新后按 **Ctrl+C** 停止 KB Forge，再运行平时使用的启动命令。如果更新修改了可选的 PDF 依赖，请重新运行上面的安装命令。如果使用的是 ZIP 下载版，请换用新版程序，并在新版中打开已有的知识库。
+```sh
+python3 -m kbforge ../collections/work-collection --backup-collection --output ../work-backup.zip
+python3 -m kbforge ../collections --backup-all-collections --output ../collections-backup.zip
+```
+
+在 Windows 上，可使用 `py` 代替 `python3`。第二条命令通过 `kbforge.yaml` 识别指定父目录下的知识库，只查找直接子目录。备份包含整个知识库，包括文章、编号、配置、品牌样式和本地资源。命令会校验 ZIP，并拒绝符号链接和特殊文件。请将一份备份存放在应用和知识库目录之外。
+
+恢复时，将 ZIP 解压到新目录。启动 KB Forge 时，传入包含 `kbforge.yaml` 的已解压知识库目录，例如 `python3 -m kbforge ../restored/work-collection`。切换之前，请打开几篇文章并检查图片。如果只恢复一篇文章，请使用[文章包导入](docs/standard.zh-CN.md#文章包)。即使自动编号从 2 开始，仍可导入未使用且未预留的 `00001` 号。
+
+### 更新应用
+
+通过 Git 克隆安装时，可选择 **Updates → Check and install update**（更新 → 检查并安装更新），也可停止服务后，从应用目录运行以下命令。
+
+```sh
+python3 -m kbforge --update
+```
+
+KB Forge 会获取当前分支所跟踪的远程分支，并仅通过快进方式更新。Git 会阻止覆盖冲突的本地文件。如果受 Git 跟踪的修改阻止更新，可用 `git status --short` 查看。如果存在仅本地拥有的提交，请通过 Git 处理。更新功能跟踪上游分支，与发布标签相互独立。通过界面更新后，按 **Ctrl+C** 停止服务，再重新启动。如果可选的 PDF 依赖有变更，请重新执行上文的安装命令。
+
+如果通过 ZIP 安装，请将[新版程序](https://github.com/iandorsey00/kb-forge/releases)解压到与旧版并列的新目录，并在启动时传入现有知识库路径。建议将知识库放在应用目录之外，以便单独替换软件。请先备份知识库，并确认新版可以打开，再移除旧版。
 
 ### 创建空白知识库
 
@@ -95,7 +114,11 @@ python3 -m kbforge work-collection
 
 该命令创建最小配置、空编号登记表、空文章目录和通用文章模板。使用 `--language` 设置首选语言，默认值为 `en-US)。之后可导入主题 ZIP 以应用品牌样式。在 Windows PowerShell 中，可使用 `py` 代替 `python3`。
 
-**Attach image** 会在光标处插入图片引用，保留尚未保存的草稿内容。文件会立即写入资源目录，请保存更改以保留文章中的引用。如果放弃草稿，可通过校验查找未引用的资源。
+### 批量处理图片
+
+先从演示文稿导出所需图片，或将截图复制到剪贴板。在文章编辑页，可以一次选择多个文件，将其拖入编辑器或附件表单，也可将剪贴板中的图片粘贴到编辑器。检查每张图片的替代文字，按需设置 **Width for this batch (%)**（本批图片宽度），然后点击 **Attach images**（添加图片）。Markdown 引用会按队列顺序插在光标所在行下方。图片文件会立即写入资源目录。请保存草稿以保留引用。
+
+如果图片属于列表项，请将光标放在包含列表标记的那一行，KB Forge 会自动设置缩进。如需手动调整，请按列表项正文前的字符数设置 **Indentation for list images**（列表图片缩进），将列表标记计入。比如，`1. 步骤` 缩进 3 个空格，`- 步骤` 缩进 2 个空格。之后可用 `{width=60%}` 调整单张图片的宽度。参阅 [Markdown 示例](docs/standard.zh-CN.md#图片链接和品牌样式)。如果放弃草稿，可通过校验查找未引用的资源。
 
 ### 导出静态 HTML 站点
 

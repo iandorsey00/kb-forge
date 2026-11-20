@@ -20,7 +20,7 @@ This requirement applies to KB Forge's own documentation and its demonstration. 
 
 ## Run the MVP
 
-Install Python 3.11 or later and Pandoc, and make sure both are available on your PATH. Use a current Chromium browser for PDF export. No Python packages or cloud accounts are required.
+Install Python 3.11 or later and a current Pandoc with GFM `attributes` support (`pandoc --list-extensions=gfm`). Make sure both are available on your PATH. The workspace needs no cloud account or additional Python packages. The paginated PDF renderer uses optional dependencies.
 
 From the repository root, make a working copy of the demo. The application writes changes to the collection you open.
 
@@ -34,7 +34,7 @@ In Windows PowerShell, use `Copy-Item -Recurse example demo-work` and `py -m kbf
 ### Try the demo
 
 1. Open **New article**. Choose **Procedure**, keep **New article** as the source, enter a title and owner, and set a future review date. Enter a distinctive tag such as `demo-cable`. Select **Create draft**. On a fresh copy, the new ID is `FIELD-000005`.
-2. Add text under **Purpose** and **Steps**. Place the cursor where the image belongs, choose a PNG or JPEG, describe it, and select **Attach image**. Then select **Save changes** to save the text and image reference together.
+2. Add text under **Purpose** and **Steps**. Place the cursor on the line after which you want the picture. Choose a PNG or JPEG, describe it, and select **Attach images**. Then select **Save changes** to save the text and image reference together.
 3. In **Catalog**, search for `demo-cable`. Open the article to check the branding and image. Use **Validation** to find problems. The supplied incomplete practice draft intentionally has a missing owner, a missing section and image, and an overdue review.
 4. Select **Publish**, then **Print or save as PDF**. In Chromium, choose **Save as PDF**, turn off the browser's own headers and footers, and check the preview before saving. The print stylesheet supplies A4 margins, page numbers, and the branded title block. Try the Chinese edition of `FIELD-000001` to check the characters and screenshot. Install a Simplified Chinese system font if the print preview shows missing glyphs.
 5. In a text editor, open `demo-work/articles/FIELD-000005/en-US.md` and inspect its front matter and relative image link. Open the PNG or JPEG in the article's `assets` folder directly.
@@ -45,7 +45,7 @@ Run repository validation without the browser with `python3 -m kbforge demo-work
 
 Read the [KB Forge Documentation Standard](docs/standard.md) for file layout, metadata, lifecycle, translation and migration. The [demo collection](example/kbforge.yaml) shows the identifier format, article templates and organization branding.
 
-The MVP runs on loopback and is intended for one local operator per collection. The browser interface is in English. PDF export uses the browser's print dialog. See the standard for local allocation, Markdown, and import limits.
+The workspace runs on loopback for one local operator per collection. The browser interface is in English. Use the paginated renderer below or the browser's print dialog for PDF export. See the standard for local allocation, Markdown, and import limits.
 
 ### Publish a paginated branded PDF
 
@@ -78,11 +78,30 @@ In Windows PowerShell, use `py` in place of `python3` and `Copy-Item -Recurse ex
 
 The ZIP contains the `workspace`, `branding`, and `publishing` settings and the assets those sections reference. Articles, numbering, templates, and article-specific PDF covers stay with their collections. Export the destination theme to a separate ZIP first if you want a backup of its settings. Import replaces the three theme sections and stops before updating them if an existing asset has the same name and different contents.
 
-### Update from the app
+### Back up and restore collections
 
-If you run KB Forge from a Git checkout, open **Updates → Check and install update**. KB Forge fetches the current branch's configured upstream and applies it only as a fast-forward. Finish any open article edits first. Commit or set aside local checkout changes before updating. Use Git directly to reconcile a branch with local-only commits.
+Save any edits and stop KB Forge before backing up. Run one of these commands from the app directory. Use a new ZIP filename and an existing destination folder outside the collections.
 
-After an update, stop KB Forge with **Ctrl+C** and run your usual launch command again. If the update changes the optional PDF dependencies, rerun the installation command above. For a ZIP download, replace the application with a newer copy and open your existing collection from it.
+```sh
+python3 -m kbforge ../collections/work-collection --backup-collection --output ../work-backup.zip
+python3 -m kbforge ../collections --backup-all-collections --output ../collections-backup.zip
+```
+
+On Windows use `py` in place of `python3`. The second command finds collections directly under the given parent by their `kbforge.yaml`. Backups include the whole collection, including articles, IDs, configuration, branding, and local assets. The command verifies the ZIP and rejects symlinks and special files. Store a copy separately from the application and collection.
+
+To restore, extract your ZIP into a new folder. Open the extracted collection by passing the folder that contains its `kbforge.yaml`, for example `python3 -m kbforge ../restored/work-collection`. Check a few articles and their images before switching to it. For a single recovered article, use [article package import](docs/standard.md#article-packages). An unused, unreserved ID ending in `00001` can be imported even if automatic allocation starts at 2.
+
+### Update the app
+
+For a Git clone, use **Updates → Check and install update** or run the following from the app directory after stopping the server.
+
+```sh
+python3 -m kbforge --update
+```
+
+KB Forge fetches the current branch's configured upstream and applies fast-forward updates. Git blocks collisions with local files. Use `git status --short` to inspect tracked edits if they block the update, and use Git to reconcile any local-only commits. The updater follows the upstream branch independently of release tags. After an in-app update, stop the server with **Ctrl+C** and launch it again. If optional PDF dependencies changed, reinstall them with the command above.
+
+For a ZIP installation, extract the [new release](https://github.com/iandorsey00/kb-forge/releases) alongside the old app folder, then launch the new copy with the path to your existing collection. Keep your collection outside the application folder so you can replace the software independently. Back up and open the collection successfully before removing the old installation.
 
 ### Create a blank collection
 
@@ -95,7 +114,11 @@ python3 -m kbforge work-collection
 
 This creates a minimal configuration, an empty ID registry and article directory, and a generic article template. Use `--language` to set the first language (default `en-US`). Import a theme ZIP to add branding later. In Windows PowerShell, use `py` in place of `python3`.
 
-**Attach image** inserts a reference at the editor cursor without reloading the draft. The file is stored immediately. Save changes to make the reference part of the article. If you abandon the draft, validation can identify unreferenced assets.
+### Work with many images
+
+Export the relevant pictures from the source presentation, or copy a screenshot to the clipboard. On the article edit page, select several files at once, drag them onto the editor or attachment form, or paste a clipboard image into the editor. Check the alternative text for each, set an optional **Width for this batch (%)**, and select **Attach images**. The Markdown references go below the current line in the order shown in the queue. The files are stored immediately. Save the draft to keep the references.
+
+For images that belong to a list item, place the cursor on the line with its list marker. KB Forge picks up the indentation. To override it, set **Indentation for list images** to the number of characters before the item text, counting the marker. For example, use 3 spaces for `1. Step` and 2 for `- Step`. Adjust individual widths afterward with `{width=60%}`. See the [Markdown example](docs/standard.md#images-links-and-branding). Validation can identify unreferenced assets if you abandon a draft.
 
 ### Export a static HTML site
 

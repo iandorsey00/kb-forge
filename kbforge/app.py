@@ -13,6 +13,7 @@ import shutil
 import sys
 from urllib.parse import parse_qs, urlsplit
 
+from .backup import backup_collections
 from .package import import_package
 from .theme import export_theme, import_theme
 from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, theme_asset
@@ -22,11 +23,12 @@ from .repository import (
     STATUSES,
     Repository,
     initialize_collection,
+    image_width,
     load_article,
     save_article,
 )
 
-from .update import update_checkout
+from .update import RELEASES_URL, update_checkout
 from .renumber import renumber
 from .migrate import MIGRATIONS, migrate_articles
 
@@ -226,6 +228,8 @@ class Handler(BaseHTTPRequestHandler):
             f"<h1>Update KB Forge</h1>"
             "<p>Fetch and install the latest commit from this checkout’s configured upstream branch. "
             "Save any open article edits before updating.</p>"
+            f'<p>Using a ZIP download? Get the <a href="{RELEASES_URL}">new release</a> '
+            "in a separate folder and open your existing collection by path.</p>"
             f'<form method="post" action="/updates">{self.form_token()}'
             '<button type="submit">Check and install update</button></form>',
         )
@@ -515,15 +519,20 @@ class Handler(BaseHTTPRequestHandler):
 <form class="panel" method="post" action="{esc(article_url(path, "edit"))}">
 {self.form_token()}<input type="hidden" name="fingerprint" value="{fingerprint}">
 <div class="grid">{self.metadata_fields(metadata)}{types}{status}{translation}</div>
+<p><a href="#image-upload">Attach images</a></p>
 <label>Article Markdown<textarea name="body">{esc(body.strip())}</textarea></label>
 <button>Save changes</button></form>
 <form class="panel" id="image-upload" method="post" action="{esc(article_url(path, "image"))}">
-{self.form_token()}<h2>Add an image</h2><p>The image reference is inserted at the cursor. Save changes to keep it in the article.</p>
-<label>Image<input id="image-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" required></label>
-{field("alt", "Describe the image for readers", required=True)}
-<input type="hidden" name="filename"><input type="hidden" name="image">
-<p id="upload-error" role="status"></p><button type="submit">Attach image</button>
-<noscript><p>Enable JavaScript to upload an image through this form.</p></noscript>
+{self.form_token()}<h2>Attach images</h2>
+<p>Choose files, drop them here or on the editor, or paste an image into the editor. References are inserted below the current line. Save the article to keep them.</p>
+<label>Images<input id="image-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple></label>
+<div id="image-queue"></div>
+<div class="grid">
+<label>Width for this batch (%)<input name="width" type="number" min="1" max="100" placeholder="Automatic"></label>
+<label>Indentation for list images (spaces)<input name="indent" type="number" min="0" max="24" placeholder="Automatic"></label>
+</div>
+<p id="upload-error" role="status"></p><button type="submit">Attach images</button>
+<noscript><p>Enable JavaScript to attach images through this form.</p></noscript>
 <ul>{assets}</ul></form>''',
         )
 
@@ -566,12 +575,16 @@ class Handler(BaseHTTPRequestHandler):
         self.redirect(article_url(path))
 
     def upload(self, values):
-        """Store the image and add its Markdown reference in one serialized edit."""
+        """Store an image and return its reference or append it in legacy mode."""
         path = self.path_from(values)
         alt = " ".join(values.get("alt", "").split())
         if not alt:
             raise ValueError("Describe the image for readers.")
         alt = alt.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+        width = values.get("width", "")
+        attributes = f"{{width={width}%}}" if width else ""
+        if width:
+            image_width(["", [], [["width", f"{width}%"]]])
         with self.server.write_lock:
             metadata, body = load_article(path)
             encoded = values.get("image", "")
@@ -580,11 +593,12 @@ class Handler(BaseHTTPRequestHandler):
             relative = self.repo.store_image(
                 path.parent.name, values.get("filename", ""), image
             )
+            markdown = f"![{alt}]({relative}){attributes}"
             if values.get("insert") == "draft":
                 import json
 
                 self.send_content(
-                    json.dumps({"markdown": f"![{alt}]({relative})"}),
+                    json.dumps({"markdown": markdown}),
                     content_type="application/json",
                 )
                 return
@@ -593,9 +607,7 @@ class Handler(BaseHTTPRequestHandler):
                     revision=metadata["revision"] + 1,
                     updated_on=date.today().isoformat(),
                 )
-                save_article(
-                    path, metadata, body.rstrip() + f"\n\n![{alt}]({relative})"
-                )
+                save_article(path, metadata, body.rstrip() + f"\n\n{markdown}")
             except (OSError, KeyError, TypeError):
                 (path.parent / relative).unlink(missing_ok=True)
                 raise
@@ -638,7 +650,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Open a portable KB Forge collection.")
     parser.add_argument(
-        "collection", type=Path, help="Path to the collection directory"
+        "collection", nargs="?", type=Path, help="Path to the collection directory"
     )
     parser.add_argument("--port", type=int, default=8765)
     actions = parser.add_mutually_exclusive_group()
@@ -659,7 +671,7 @@ def main():
     parser.add_argument("--digits", type=int, default=5, help="ID digits for --init")
     parser.add_argument("--language", default="en-US", help="Language for --init")
     parser.add_argument(
-        "--output", type=Path, help="Output path for PDF or HTML export"
+        "--output", type=Path, help="Output path for PDF, HTML, or backup ZIP"
     )
     actions.add_argument(
         "--export-theme", type=Path, metavar="ZIP", help="Export branding and layout"
@@ -688,16 +700,37 @@ def main():
         choices=sorted(MIGRATIONS),
         help="Preview an article standards migration",
     )
+    actions.add_argument(
+        "--update", action="store_true", help="Update this Git checkout"
+    )
+    actions.add_argument(
+        "--backup-collection", action="store_true", help="Archive the entire collection"
+    )
+    actions.add_argument(
+        "--backup-all-collections",
+        action="store_true",
+        help="Archive all collections directly inside the given parent directory",
+    )
     parser.add_argument("--author", help="Author value for the author migration")
     args = parser.parse_args()
     if args.force and not (args.renumber or args.migrate):
         parser.error("--force requires --renumber or --migrate.")
     if (args.author is not None) != (args.migrate == "author"):
         parser.error("--migrate author requires --author, and vice versa.")
-    if bool(args.export_pdf or args.export_html) != bool(args.output):
-        parser.error("--output is required for PDF and HTML export.")
+    backup = args.backup_collection or args.backup_all_collections
+    if bool(args.export_pdf or args.export_html or backup) != bool(args.output):
+        parser.error("--output is required for PDF and HTML export and for backups.")
+    if args.update:
+        if args.collection is not None:
+            parser.error("--update takes no collection path.")
+    elif args.collection is None:
+        parser.error(
+            "Provide a collection directory (or a parent for --backup-all-collections)."
+        )
     if not (
-        args.init
+        args.update
+        or backup
+        or args.init
         or args.export_theme
         or args.import_theme
         or args.renumber
@@ -705,6 +738,25 @@ def main():
     ) and not shutil.which("pandoc"):
         parser.error("Pandoc is required and must be on PATH.")
     try:
+        if args.update:
+            result = update_checkout()
+            if result:
+                before, after = result
+                print(
+                    f"Updated KB Forge from {before} to {after}. Restart any running instance."
+                )
+            else:
+                print("This checkout matches its configured upstream branch.")
+            return 0
+        if backup:
+            count = backup_collections(
+                args.collection,
+                args.output,
+                all_collections=args.backup_all_collections,
+            )
+            label = "collection" if count == 1 else "collections"
+            print(f"Backed up {count} {label} to {args.output}")
+            return 0
         if args.init:
             initialize_collection(
                 args.collection,

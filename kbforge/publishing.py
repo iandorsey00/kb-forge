@@ -9,7 +9,7 @@ import subprocess
 from urllib.parse import quote, unquote, urlencode, urlsplit
 
 from .pdf import IMAGE_SUFFIXES, pdf_theme, theme_asset
-from .repository import ASSET, article_author, load_article, pandoc
+from .repository import ASSET, article_author, image_width, load_article, pandoc
 
 
 def esc(value):
@@ -38,6 +38,16 @@ def render_body(repo, path, body, link_for=article_url):
 
     def rewrite(value):
         if isinstance(value, list):
+            # Discard author-supplied HTML attributes, including event handlers and styles.
+            if (
+                len(value) == 3
+                and isinstance(value[0], str)
+                and isinstance(value[1], list)
+                and isinstance(value[2], list)
+                and all(isinstance(item, str) for item in value[1])
+                and all(isinstance(item, list) and len(item) == 2 for item in value[2])
+            ):
+                return [value[0], value[1], []]
             return [rewrite(child) for child in value]
         if not isinstance(value, dict):
             return value
@@ -50,6 +60,7 @@ def render_body(repo, path, body, link_for=article_url):
             )
         if kind in ("Image", "Link"):
             content = value["c"]
+            width = image_width(content[0]) if kind == "Image" else None
             try:
                 parts = urlsplit(content[-1][0])
                 relative = unquote(parts.path)
@@ -90,6 +101,10 @@ def render_body(repo, path, body, link_for=article_url):
                     content[-1][0] = url + fragment
             except (OSError, ValueError):
                 return {"t": "Span", "c": [["", [], []], rewrite(content[1])]}
+            rendered = rewrite(content)
+            if width is not None:
+                rendered[0][2] = [["width", f"{width}%"]]
+            return {"t": kind, "c": rendered}
         return {key: rewrite(child) for key, child in value.items()}
 
     ast["blocks"] = rewrite(ast["blocks"])

@@ -48,6 +48,16 @@
 
 将图片保存在文章的 `assets/` 目录下。名称可使用 ASCII 小写字母、数字和连字符，扩展名为 `.png`、`.jpg`、`.gif` 或 `.webp`。使用相对引用，例如 `![已选中 HDMI 1](assets/input-selector.png)`。用对应版本的语言填写替代文字，说明图片展示的内容。上传时保留图片的原始字节，文件名冲突时会加上数字后缀。简短的文件名便于阅读和迁移。
 
+可以在图片引用后紧接 Pandoc 图片宽度提示。KB Forge 接受 `1%` 至 `100%` 的整数百分比，以可用正文宽度为基准。HTML 和 PDF 均保留图片的宽高比。为适应页面高度，PDF 还可进一步缩小较高的图片。普通 GFM 查看器可能会将宽度提示作为图片旁的文字显示。
+
+```markdown
+1. 选择输入源。
+
+   ![已选中 HDMI 1](assets/input-selector.png){width=60%}
+```
+
+在图片前留一个空行，并将图片缩进至列表项的正文位置，使其仍属于同一个列表项。
+
 使用相对路径链接其他文章版本，例如 `../FIELD-000002/en-US.md`。外部文本链接可使用 HTTP、HTTPS 或 mailto。在 `kbforge.yaml` 中配置 `branding.name`、可选的六位十六进制颜色 `color` 和可选的品牌图片文件名 `logo`。品牌样式应独立于文章正文。
 
 ## 文章生命周期与迁移
@@ -72,10 +82,11 @@ KB Forge 通过本地文件系统上的独占锁分配编号。编号已分配�
 | `publishing.html_cover_image` | 浏览器文章视图和静态 HTML 导出的可选封面图。省略时沿用 `cover_image`；设为 `null` 可在 HTML 中隐藏封面图。PDF 封面使用独立设置。 |
 | `publishing.header_image`、`publishing.footer_image` | 在分页 PDF 中重复显示的可选页眉、页脚图片，在 HTML 中各显示一次 |
 | `publishing.paper` | `A4`（默认）或 `Letter` |
+| `publishing.body_font_size` | 分页 PDF 的正文字号，单位为磅，范围为 8 至 18，默认为 11 |
 | `publishing.toc_depth` | PDF 可点击目录所包含的 Markdown 最深标题级别，范围为 0（关闭）至 6，默认为 2 |
 | 文章的 `cover_pdf` | `branding/` 中的可选 PDF 文件名。第一页替换自动生成的封面并确定纸张尺寸。请使用未旋转且页面坐标原点为零的单页 PDF。 |
 
-HTML 页面显示品牌图片和 HTML 标题区。在 **Publish**（发布）中打开品牌 PDF，即可查看导入的 PDF 封面和带页码的目录。PDF 内页使用知识库标识和图片，并显示文档编号、修订号、更新日期及页码。其他发布工具也可以读取相同的元数据及文件。
+HTML 页面显示品牌图片和 HTML 标题区。在 **Publish**（发布）中打开品牌 PDF，即可查看导入的 PDF 封面和带页码的目录。PDF 内页使用知识库标识和图片，并显示文档编号、修订号、更新日期及页码。渲染器会为引用文字添加底色，并在空间允许时让标题与后续内容的开头留在同一页。其他发布工具也可以读取相同的元数据及文件。
 
 ### 工作区品牌样式与字体
 

@@ -7,12 +7,73 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from kbforge.pdf import export_pdf, pdf_available
-from kbforge.publishing import export_html
+from kbforge.publishing import export_html, render_body
 from kbforge.repository import Repository, load_article, save_article
 
 
 @unittest.skipUnless(pdf_available(), "Optional PDF dependencies are missing")
 class PublishingTest(unittest.TestCase):
+    def test_sized_list_image_and_shaded_quote(self):
+        from pypdf import PdfReader
+
+        with TemporaryDirectory() as directory:
+            collection = Path(directory) / "collection"
+            shutil.copytree(Path(__file__).resolve().parents[1] / "example", collection)
+            repo = Repository(collection)
+            article = repo.article_path("FIELD-000001", "en-US")
+            meta, _ = load_article(article)
+            body = (
+                "## Steps\n\n"
+                "1. List text\n\n"
+                "   ![Selector](assets/input-selector.png){width=40%}\n\n"
+                "> Quoted text\n"
+            )
+            save_article(article, meta, body)
+            pdf = PdfReader(BytesIO(export_pdf(repo, article)))
+            page = pdf.pages[2]
+            body_origin = {}
+
+            def visit(text, cm, tm, font, size):
+                if "List text" in text:
+                    body_origin.update(x=cm[4] + tm[4], size=size)
+
+            page.extract_text(visitor_text=visit)
+            self.assertEqual(body_origin["size"], 11)
+            operations = page.get_contents().operations
+            image_index = max(
+                index
+                for index, (_, operator) in enumerate(operations)
+                if operator == b"Do"
+            )
+            image_width, _, _, _, _, _ = operations[image_index - 1][0]
+            self.assertLess(image_width, float(page.mediabox.width) * 0.4)
+            self.assertAlmostEqual(
+                operations[image_index - 3][0][4],
+                body_origin["x"],
+                places=3,
+            )
+            self.assertTrue(any(operator == b"re" for _, operator in operations))
+
+            html = render_body(repo, article, body)
+            self.assertIn('style="width:40.0%"', html)
+            self.assertIn("<blockquote>", html)
+
+            near_boundary = (
+                "## Steps\n\n"
+                + "Filler paragraph.\n\n" * 24
+                + "## Figure heading\n\n"
+                + "![Adjacent figure](assets/input-selector.png){width=60%}\n"
+            )
+            save_article(article, meta, near_boundary)
+            pdf = PdfReader(BytesIO(export_pdf(repo, article)))
+            for page in pdf.pages[2:]:
+                text = page.extract_text()
+                if "Figure heading" in text:
+                    self.assertIn("Adjacent figure", text)
+                    break
+            else:
+                self.fail("Expected the figure heading in the PDF body")
+
     def test_contents_links_land_on_their_heading_pages(self):
         from pypdf import PdfReader
 

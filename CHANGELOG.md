@@ -1,5 +1,19 @@
 # Changelog · 更新日志
 
+## v0.4.0
+
+- Back up one or several complete collections to a verified ZIP.
+- Update a Git checkout from the CLI or the app while preserving local collection folders.
+- Use the taller editor to select, drop, or paste images and attach them in batches with optional display widths.
+- Shade blockquotes, align images inside list items, keep headings with the start of their content, and use a configurable 11-point default body size in paginated PDFs.
+
+### 简体中文
+
+- 将一个或多个完整知识库备份到经过校验的 ZIP 文件。
+- 可通过命令行或应用更新 Git 工作副本，并保留本地知识库目录。
+- 在更高的编辑区中选择、拖入或粘贴图片，支持批量添加并设置显示宽度。
+- 分页 PDF 为引用添加底色，对齐列表中的图片，让标题与正文开头同页，并采用可配置的默认 11 磅正文字号。
+
 ## v0.3.0
 
 - Import article packages with Markdown editions and shared images. Validate against the destination collection and reserve the imported ID.

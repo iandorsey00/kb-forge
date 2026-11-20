@@ -48,6 +48,16 @@ Express applicability through `regions` and `countries`. A global article can us
 
 Store images under the article's `assets/` directory. Use lowercase ASCII letters and digits with optional hyphens, and a `.png`, `.jpg`, `.gif`, or `.webp` suffix. Write relative references such as `![HDMI 1 selected](assets/input-selector.png)`. Use alternative text to convey what the image shows in the language of the edition. The uploader keeps the image bytes and adds a numeric suffix if the filename is taken. Short names make paths easier to read and move.
 
+You can add a Pandoc image width hint immediately after the image reference. KB Forge accepts whole percentages from `1%` to `100%` of the available content width. Both HTML and PDF preserve proportions. The PDF can reduce a tall image further to fit the page. Plain GFM viewers may show the width hint as text beside the image.
+
+```markdown
+1. Select the input.
+
+   ![HDMI 1 selected](assets/input-selector.png){width=60%}
+```
+
+Indent the image to the list item's text column and leave a blank line before it. This keeps the image within the same list item.
+
 Link to another edition with a relative path such as `../FIELD-000002/en-US.md`. External text links can use HTTP, HTTPS or mailto. Configure `branding.name`, an optional six-digit hex `color`, and an optional image filename `logo` in `kbforge.yaml`. Keep branding separate from article prose.
 
 ## Lifecycle and portability
@@ -72,10 +82,11 @@ The optional `publishing` object in `kbforge.yaml` describes the output, using o
 | `publishing.html_cover_image` | Optional artwork for the browser article view and static HTML export. Omit to reuse `cover_image`, or set to `null` to hide cover artwork in HTML. The PDF cover uses its own settings. |
 | `publishing.header_image`, `publishing.footer_image` | Optional page artwork, repeated in paginated PDF output and shown once each in HTML |
 | `publishing.paper` | `A4` (default) or `Letter` |
+| `publishing.body_font_size` | Paginated PDF body size in points, 8 to 18. Default is 11. |
 | `publishing.toc_depth` | Deepest Markdown heading level included in the linked PDF contents, from 0 (off) to 6. Default is 2. |
 | Article `cover_pdf` | Optional filename in `branding/`. The first page replaces the generated cover and sets the paper dimensions. Use a single-page, unrotated PDF with a zero-origin media box. |
 
-The HTML view displays the collection artwork and an HTML title block. To see an imported PDF cover and the paginated contents, open the branded PDF from **Publish**. PDF interior pages use the collection logo and artwork with the document ID, revision, update date, and page number. Third-party renderers can use the same metadata and files.
+The HTML view displays the collection artwork and an HTML title block. To see an imported PDF cover and the paginated contents, open the branded PDF from **Publish**. PDF interior pages use the collection logo and artwork with the document ID, revision, update date, and page number. The renderer shades blockquote text and keeps headings with the start of their content where space permits. Third-party renderers can use the same metadata and files.
 
 ### Workspace branding and fonts
 

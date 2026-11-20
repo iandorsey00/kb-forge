@@ -84,7 +84,7 @@ def pandoc(markdown, output):
             [
                 "pandoc",
                 "--sandbox",
-                "--from=gfm-yaml_metadata_block-raw_html",
+                "--from=gfm+attributes-yaml_metadata_block-raw_html",
                 f"--to={output}",
             ],
             input=markdown,
@@ -98,6 +98,16 @@ def pandoc(markdown, output):
             "Pandoc could not process the article. Check installation and article syntax."
         ) from error
     return result.stdout
+
+
+def image_width(attributes):
+    """Read a portable image width as a percentage of the available line."""
+    width = dict(attributes[2]).get("width")
+    if width is None:
+        return None
+    if not re.fullmatch(r"(?:[1-9][0-9]?|100)%", width):
+        raise ValueError("Image width must be a whole percentage from 1% to 100%.")
+    return int(width[:-1])
 
 
 def initialize_collection(root, name, prefix, digits, language):
@@ -503,6 +513,8 @@ class Repository:
                 kind, content = node["t"], node["c"]
                 url = content[-1][0]
                 try:
+                    if kind == "Image":
+                        image_width(content[0])
                     parts = urlsplit(url)
                     if parts.scheme or parts.netloc:
                         if kind == "Image":

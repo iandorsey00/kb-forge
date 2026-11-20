@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from importlib.util import find_spec
 
-from .repository import load_article, pandoc
+from .repository import image_width, load_article, pandoc
 from urllib.parse import unquote, urlsplit
 
 
@@ -160,6 +160,7 @@ def pdf_blocks(repo, path, blocks):
                     "kind": "image",
                     "text": inline(item["c"][1]),
                     "image": str(image),
+                    "width": image_width(item["c"][0]),
                 }
             if inline(pending).strip():
                 yield {"kind": "text", "text": inline(pending)}
@@ -169,17 +170,23 @@ def pdf_blocks(repo, path, blocks):
             )
             for index, item in enumerate(items):
                 marker = "•" if start is None else f"{start + index}."
+                gutter = max(14, 6 * len(marker) + 5)
                 for entry in pdf_blocks(repo, path, item):
-                    entry["list_depth"] = entry.get("list_depth", 0) + 1
-                    # Only the first paragraph at this level receives the item marker.
-                    if entry["kind"] == "text" and marker and entry["list_depth"] == 1:
-                        entry["marker"] = marker
+                    if "indent" not in entry and marker and entry["kind"] != "code":
+                        entry["marker"] = (marker, gutter)
                         marker = ""
+                    entry["indent"] = entry.get("indent", 0) + 12 + gutter
                     yield entry
-        elif kind in ("BlockQuote", "Div"):
-            yield from pdf_blocks(
-                repo, path, value if kind == "BlockQuote" else value[1]
+        elif kind == "BlockQuote" or kind == "Div":
+            quoted = kind == "BlockQuote" or bool(
+                set(value[0][1]) & {"note", "tip", "important", "warning", "caution"}
             )
+            for entry in pdf_blocks(
+                repo, path, value if kind == "BlockQuote" else value[1]
+            ):
+                if quoted:
+                    entry["quoted"] = True
+                yield entry
         elif kind == "CodeBlock":
             yield {"kind": "code", "text": value[1]}
         elif kind not in ("RawBlock", "Null", "HorizontalRule"):
@@ -207,6 +214,13 @@ def export_pdf(repo, path):
             theme_asset(repo, repo.config["branding"]["logo"], IMAGE_SUFFIXES)
         )
     settings = repo.config.get("publishing", {})
+    if "body_font_size" in settings:
+        size = settings["body_font_size"]
+        if type(size) not in (int, float) or not 8 <= size <= 18:
+            raise ValueError(
+                "publishing.body_font_size must be between 8 and 18 points."
+            )
+        theme["body_font_size"] = size
     if settings.get("font"):
         theme["font"] = str(theme_asset(repo, settings["font"], {".ttf", ".ttc"}))
     if not theme.get("cover_pdf"):
