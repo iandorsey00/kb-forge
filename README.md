@@ -36,7 +36,7 @@ In Windows PowerShell, use `Copy-Item -Recurse example demo-work` and `py -m kbf
 ### Try the demo
 
 1. Open **New article**. Choose **Procedure**, keep **New article** as the source, enter a title and owner, and set a future review date. Enter a distinctive tag such as `demo-cable`. Select **Create draft**. On a fresh copy, the new ID is `FIELD-000005`.
-2. Add text under **Purpose** and **Steps**. Place the cursor on the line after which you want the picture. Choose a PNG or JPEG, describe it, and select **Attach images**. Then select **Save changes** to save the text and image reference together.
+2. Add text under **Purpose** and **Steps**. Use **Split** to see how the Markdown renders while you write. Place the cursor on the line after which you want the picture, choose a PNG or JPEG in **Images**, describe it, and select **Insert images**. Then select **Save changes** to save the text and image reference together.
 3. In **Catalog**, search for `demo-cable`. Open the article to check the branding and image. Use **Validation** to find problems. The supplied incomplete practice draft intentionally has a missing owner, a missing section and image, and an overdue review.
 4. Select **Publish**, then **Print or save as PDF**. In Chromium, choose **Save as PDF**, turn off the browser's own headers and footers, and check the preview before saving. The print stylesheet supplies A4 margins, page numbers, and the branded title block. Try the Chinese edition of `FIELD-000001` to check the characters and screenshot. Install a Simplified Chinese system font if the print preview shows missing glyphs.
 5. In a text editor, open `demo-work/articles/FIELD-000005/en-US.md` and inspect its front matter and relative image link. Open the PNG or JPEG in the article's `assets` folder directly.
@@ -46,6 +46,8 @@ Run repository validation without the browser with `python3 -m kbforge demo-work
 ## Reference
 
 Read the [KB Forge Documentation Standard](docs/standard.md) for file layout, metadata, lifecycle, translation and migration. The [demo collection](example/kbforge.yaml) shows the identifier format, article templates and organization branding.
+
+Use [custom metadata fields](docs/standard.md#custom-metadata-fields) to add typed fields with optional defaults to the article editor.
 
 The workspace runs on loopback for one local operator per collection. The browser interface is in English. Use the paginated renderer below or the browser's print dialog for PDF export. See the standard for local allocation, Markdown, and import limits.
 
@@ -132,7 +134,9 @@ To change the workspace name shown in the app and exported site navigation, set 
 
 ### Work with many images
 
-Export the relevant pictures from the source presentation, or copy a screenshot to the clipboard. On the article edit page, select several files at once, drag them onto the editor or attachment form, or paste a clipboard image into the editor. Check the alternative text for each, set an optional **Width for this batch (%)**, and select **Attach images**. The Markdown references go below the current line in the order shown in the queue. The files are stored immediately. Save the draft to keep the references.
+Export the relevant pictures from the source presentation, or copy a screenshot to the clipboard. On the article edit page, select several files at once, drag them onto the editor or the **Images** panel, or paste a clipboard image into the editor. Check the alternative text for each. Under **Batch options**, set an optional **Width for this batch (%)**, then select **Insert images**. The references go below the current line in queue order. The files are stored immediately. Save the draft to keep the references.
+
+Use **Write** for the full Markdown pane, **Split** to see the source and rendered content together, or **Preview** to read the rendered draft on its own. Article details, classification, and configured custom metadata are in collapsible panels. Press **Ctrl+S** on Windows or Linux, or **⌘S** on macOS, to save.
 
 For images that belong to a list item, place the cursor on the line with its list marker. KB Forge picks up the indentation. To override it, set **Indentation for list images** to the number of characters before the item text, counting the marker. For example, use 3 spaces for `1. Step` and 2 for `- Step`. Adjust individual widths afterward with `{width=60%}`. See the [Markdown example](docs/standard.md#images-links-and-branding). Validation can identify unreferenced assets if you abandon a draft.
 

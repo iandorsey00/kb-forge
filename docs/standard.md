@@ -36,6 +36,27 @@ Use UTF-8. Configuration, the registry, and front matter use JSON object syntax,
 
 A template specifies the required second-level Markdown headings. Heading names can be configured separately for each language, as shown in the demo configuration. The validator checks structure, date and translation status, and file references. Review the technical steps and the meaning of the translation before publishing.
 
+### Custom metadata fields
+
+Add an optional top-level `metadata_fields` object to the collection's `kbforge.yaml`. Merge this example into the existing configuration and restart KB Forge.
+
+```json
+{
+  "metadata_fields": {
+    "internal": {"type": "boolean", "label": "Internal", "default": false},
+    "legacy_irl_id": {"type": "integer", "label": "Legacy IRL ID"},
+    "audience": {"type": "string", "label": "Audience"}
+  }
+}
+```
+
+- Use the same character rules as for article IDs for field keys, and choose keys unused by KB Forge's built-in metadata. Use the optional `label` to set the name shown in the editor. Otherwise, the editor displays the key.
+- Use `boolean` for `true` and `false`, `integer` for whole numbers such as `37`, or `string` for nonblank, single-line text. Both the optional `default` and any stored value must match the declared type. Use JSON literals for booleans and integers.
+- Each field appears on **New article** and **Edit article**, and its value is saved under its own key in that language edition's Markdown front matter. Defaults prefill new editions, including new translations. Existing editions stay as saved. Clear a text or integer field or choose **Not set** for a boolean to omit its key. Choosing **False** stores `false`.
+- Existing metadata without a definition stays in the article when you save it. If you define a field already used in your articles, the validator checks any existing values against the new type.
+
+The example `internal` flag records intended audience. Site inclusion continues to follow article status and the publishing settings.
+
 ## Permanent IDs, translations, and regions
 
 Choose `identifiers.prefix`, `separator` (`-` or `_`), `digits` (1–12), and `start` (a positive integer). After reservation, keep the ID when a title, region, or other metadata changes. Keep registry entries when articles are retired or removed. This prevents reusing their IDs. New settings apply to newly reserved IDs. Historical and imported IDs can use earlier formats if they satisfy the permanent ID syntax.

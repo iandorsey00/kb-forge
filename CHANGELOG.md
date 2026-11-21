@@ -1,5 +1,17 @@
 # Changelog · 更新日志
 
+## v0.7.0
+
+- Redesign the article editor with a larger writing area, formatting controls, Write, Split, and Preview views, and a collapsible sidebar for article details, classification, and images.
+- Show unsaved changes and support saving with Ctrl+S or ⌘S.
+- Define custom string, integer, and boolean fields in `kbforge.yaml`. New editions can use configured defaults, and the validator checks stored values against their declared types.
+
+### 简体中文
+
+- 重新设计文章编辑器，扩大编写区域，提供格式工具以及编写、分屏和预览视图，并将文章详情、分类和图片放入可折叠的侧栏。
+- 显示未保存的更改，并支持使用 Ctrl+S 或 ⌘S 保存。
+- 在 `kbforge.yaml` 中定义字符串、整数和布尔类型的自定义字段。新建版本可使用默认值，校验器会检查已保存的值是否符合所声明的类型。
+
 ## v0.6.0
 
 - Add article body search to the workspace and offline search to the redesigned exported site.

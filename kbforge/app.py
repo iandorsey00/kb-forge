@@ -7,6 +7,7 @@ from datetime import date
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import re
 import secrets
 import shutil
 import sys
@@ -22,6 +23,7 @@ from .publishing import (
     branded_article,
     esc,
     image_data,
+    render_body,
     workspace_palette,
 )
 from .site_release import change_lines, copy_site, publish_site, rollback_site
@@ -31,6 +33,7 @@ from .repository import (
     LIST_FIELDS,
     STATUSES,
     Repository,
+    custom_value_matches,
     initialize_collection,
     image_width,
     load_article,
@@ -55,17 +58,19 @@ FIELDS = {
 }
 
 
-def select(name, label, values, selected="", empty=""):
+def select(name, label, values, selected="", empty="", *, form_id=""):
     options = f'<option value="">{esc(empty)}</option>' if empty else ""
     for value, title in values:
         active = " selected" if value == selected else ""
         options += f'<option value="{esc(value)}"{active}>{esc(title)}</option>'
-    return f'<label>{esc(label)}<select name="{name}">{options}</select></label>'
+    form = f' form="{form_id}"' if form_id else ""
+    return f'<label>{esc(label)}<select name="{name}"{form}>{options}</select></label>'
 
 
-def field(name, label, value="", kind="text", required=False):
+def field(name, label, value="", kind="text", required=False, *, form_id=""):
+    form = f' form="{form_id}"' if form_id else ""
     return (
-        f'<label>{esc(label)}<input name="{name}" type="{kind}" value="{esc(value)}"'
+        f'<label>{esc(label)}<input name="{name}" type="{kind}" value="{esc(value)}"{form}'
         + (" required" if required else "")
         + "></label>"
     )
@@ -106,7 +111,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def page(self, title, body, status=200, *, publication=False):
+    def page(self, title, body, status=200, *, publication=False, editor=False):
         brand = self.repo.config.get("workspace", {})
         name = esc(brand.get("name", "KB Forge"))
         css = workspace_palette(brand)
@@ -120,6 +125,7 @@ class Handler(BaseHTTPRequestHandler):
         fonts = '<link rel="stylesheet" href="/fonts.css">' if publication else ""
         update_label = self.update_label()
         available = ' class="update-available"' if update_label == "Update app…" else ""
+        layout = ' class="editor-page"' if editor else ""
         self.send_content(
             f"""<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -131,7 +137,7 @@ class Handler(BaseHTTPRequestHandler):
 <form class="workspace-search" action="/catalog" role="search">
 <input type="search" name="q" aria-label="Search articles" placeholder="Search articles">
 <button>Search</button></form></nav>
-<main>{body}</main><script src="/app.js" defer></script></body></html>""",
+<main{layout}>{body}</main><script src="/app.js" defer></script></body></html>""",
             status,
         )
 
@@ -159,7 +165,11 @@ class Handler(BaseHTTPRequestHandler):
                 form = parse_qs(
                     self.rfile.read(size).decode("utf-8"),
                     keep_blank_values=True,
-                    max_num_fields=60,
+                    max_num_fields=60 + (
+                        len(self.repo.custom_fields)
+                        if target.path in ("/create", "/edit")
+                        else 0
+                    ),
                 )
                 params.update(form)
                 if not secrets.compare_digest(
@@ -198,6 +208,7 @@ class Handler(BaseHTTPRequestHandler):
                 ("GET", "/article"): self.article,
                 ("GET", "/edit"): self.edit_form,
                 ("POST", "/edit"): self.edit,
+                ("POST", "/preview"): self.preview,
                 ("POST", "/image"): self.upload,
                 ("GET", "/publish"): self.publish,
                 ("GET", "/pdf"): self.pdf,
@@ -417,9 +428,10 @@ class Handler(BaseHTTPRequestHandler):
 <button>Search</button></form>{table(headers, rendered_rows)}""",
         )
 
-    def metadata_fields(self, metadata):
+    def standard_metadata_fields(self, metadata, names, *, form_id=""):
         fields = []
-        for name, label in FIELDS.items():
+        for name in names:
+            label = FIELDS[name]
             value = metadata.get(name, "")
             if name in LIST_FIELDS:
                 label += " (comma separated)"
@@ -432,17 +444,70 @@ class Handler(BaseHTTPRequestHandler):
                     value,
                     "date" if name == "review_on" else "text",
                     name in ("title", "owner"),
+                    form_id=form_id,
                 )
             )
-        related = metadata.get("related", [])
-        fields.append(
-            field(
-                "related",
-                "Related article IDs (comma separated)",
-                ", ".join(map(str, related)),
-            )
-        )
         return "".join(fields)
+
+    def related_field(self, metadata, *, form_id=""):
+        return field(
+            "related",
+            "Related article IDs (comma separated)",
+            ", ".join(map(str, metadata.get("related", []))),
+            form_id=form_id,
+        )
+
+    def custom_metadata_fields(self, metadata, *, creating=False, form_id=""):
+        fields = []
+        for name, definition in self.repo.custom_fields.items():
+            label = definition.get("label", name)
+            value = (
+                definition.get("default", "") if creating else metadata.get(name, "")
+            )
+            form_name = f"custom.{name}"
+            if definition["type"] == "boolean":
+                options = [("true", "True"), ("false", "False")]
+                if type(value) is bool:
+                    selected = "true" if value else "false"
+                elif not creating and name in metadata:
+                    selected = "invalid"
+                    options.append(("invalid", f"Invalid value ({value})"))
+                else:
+                    selected = ""
+                fields.append(
+                    select(form_name, label, options, selected, "Not set", form_id=form_id)
+                )
+            else:
+                fields.append(field(form_name, label, value, form_id=form_id))
+        return "".join(fields)
+
+    def submitted_custom_metadata(self, values):
+        metadata = {}
+        for name, definition in self.repo.custom_fields.items():
+            form_name = f"custom.{name}"
+            if form_name not in values:
+                continue
+            value = values[form_name].strip()
+            kind = definition["type"]
+            if not value:
+                metadata[name] = None
+            elif kind == "boolean" and value in ("true", "false"):
+                metadata[name] = value == "true"
+            elif kind == "integer":
+                try:
+                    if not re.fullmatch(r"[+-]?[0-9]+", value):
+                        raise ValueError
+                    metadata[name] = int(value, 10)
+                except ValueError:
+                    raise ValueError(f"{name}: enter a whole number.") from None
+            elif kind == "string":
+                original = values[form_name]
+                if not custom_value_matches(kind, original):
+                    raise ValueError(f"{name}: enter a single line of text.")
+                metadata[name] = original
+            else:
+                raise ValueError(f"{name}: select True, False, or Not set.")
+        return metadata
 
     def submitted_metadata(self, values):
         metadata = {key: values.get(key, "").strip() for key in FIELDS}
@@ -489,15 +554,21 @@ class Handler(BaseHTTPRequestHandler):
         translation = select(
             "translation", "Source edition", sources, empty="New article"
         )
+        fields = (
+            self.standard_metadata_fields({}, FIELDS)
+            + self.related_field({})
+            + self.custom_metadata_fields({}, creating=True)
+        )
         self.page(
             "New article",
             f"""<h1>New article</h1><form class="panel" method="post">
-{self.form_token()}<div class="grid">{languages}{types}{translation}{self.metadata_fields({})}</div>
+{self.form_token()}<div class="grid">{languages}{types}{translation}{fields}</div>
 <button>Create draft</button></form>""",
         )
 
     def create(self, values):
         metadata = self.submitted_metadata(values)
+        metadata.update(self.submitted_custom_metadata(values))
         metadata.update(
             language=values.get("language", ""), type=values.get("type", "")
         )
@@ -539,11 +610,13 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path_from(values)
         fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
         metadata, body = load_article(path)
+        form_id = "article-editor"
         status = select(
             "status",
             "Status",
             [(item, item.title()) for item in STATUSES],
             metadata.get("status"),
+            form_id=form_id,
         )
         types = select(
             "type",
@@ -553,6 +626,7 @@ class Handler(BaseHTTPRequestHandler):
                 for key, value in self.repo.templates.items()
             ],
             metadata.get("type"),
+            form_id=form_id,
         )
         translation = ""
         if metadata.get("translation_of"):
@@ -562,35 +636,105 @@ class Handler(BaseHTTPRequestHandler):
                 metadata.get("source_revision", ""),
                 "number",
                 True,
+                form_id=form_id,
             )
         assets = "".join(
             f"<li><code>{esc(file.relative_to(path.parent).as_posix())}</code></li>"
             for file in sorted((path.parent / "assets").glob("*"))
             if file.is_file()
         )
+        basics = self.standard_metadata_fields(
+            metadata, ("title", "description", "owner", "review_on"), form_id=form_id
+        )
+        classification = self.standard_metadata_fields(metadata, LIST_FIELDS, form_id=form_id)
+        custom = self.custom_metadata_fields(metadata, form_id=form_id)
+        custom_section = (
+            f'<details class="editor-card"><summary>Custom metadata</summary>'
+            f'<div class="editor-fields">{custom}</div></details>'
+            if custom
+            else ""
+        )
+        assets_section = (
+            f'<details class="editor-assets"><summary>Attached files</summary><ul>{assets}</ul></details>'
+            if assets
+            else ""
+        )
         self.page(
             "Edit article",
-            f'''<h1>Edit article</h1><p>{esc(path.parent.name)} · {esc(path.stem)}</p>
-<div class="actions"><a class="button secondary" href="{esc(article_url(path))}">View article</a></div>
-<form class="panel" method="post" action="{esc(article_url(path, "edit"))}">
+            f'''<div class="editor-breadcrumb"><a href="/catalog">Catalog</a><span aria-hidden="true">/</span> Edit article</div>
+<header class="editor-heading">
+<div><h1>{esc(metadata.get("title") or path.parent.name)}</h1>
+<p><span class="editor-id">{esc(path.parent.name)}</span><span>{esc(path.stem)}</span>
+<span>Revision {esc(metadata.get("revision", ""))}</span></p></div>
+<div class="editor-actions">
+<span id="editor-save-state" role="status"></span>
+<a class="button secondary" href="{esc(article_url(path))}">View article</a>
+<button id="editor-save" type="submit" form="{form_id}">Save changes</button>
+</div></header>
+<div class="editor-layout">
+<form id="{form_id}" method="post" action="{esc(article_url(path, "edit"))}"
+data-preview="{esc(article_url(path, "preview"))}">
 {self.form_token()}<input type="hidden" name="fingerprint" value="{fingerprint}">
-<div class="grid">{self.metadata_fields(metadata)}{types}{status}{translation}</div>
-<p><a href="#image-upload">Attach images</a></p>
-<label>Article Markdown<textarea name="body">{esc(body.strip())}</textarea></label>
-<button>Save changes</button></form>
-<form class="panel" id="image-upload" method="post" action="{esc(article_url(path, "image"))}">
-{self.form_token()}<h2>Attach images</h2>
-<p>Choose files, drop them here or on the editor, or paste an image into the editor. References are inserted below the current line. Save the article to keep them.</p>
-<label>Images<input id="image-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple></label>
+<section class="editor-card editor-composer" aria-labelledby="editor-content-title">
+<div class="editor-card-header">
+<h2 id="editor-content-title">Content</h2>
+<div class="editor-modes" id="editor-modes" role="group" aria-label="Editor view" hidden>
+<button type="button" data-mode="write" aria-pressed="true">Write</button>
+<button type="button" data-mode="split" aria-pressed="false">Split</button>
+<button type="button" data-mode="preview" aria-pressed="false">Preview</button>
+</div></div>
+<div class="editor-tools">
+<div id="markdown-tools" role="group" aria-label="Markdown formatting" hidden>
+<button type="button" data-format="heading">Heading</button>
+<button type="button" data-format="bold"><strong>Bold</strong></button>
+<button type="button" data-format="italic"><em>Italic</em></button>
+<button type="button" data-format="list">List</button>
+<button type="button" data-format="link">Link</button>
+</div>
+<a href="#image-upload">Add images</a>
+</div>
+<div class="editor-panes" data-mode="write">
+<div class="editor-source">
+<label for="article-markdown">Markdown</label>
+<textarea id="article-markdown" name="body" spellcheck="true">{esc(body.strip())}</textarea>
+</div>
+<section class="editor-preview" aria-labelledby="editor-preview-title" hidden>
+<h3 id="editor-preview-title">Preview</h3>
+<div id="editor-preview-status" role="status"></div>
+<div id="editor-preview-content" class="publication" lang="{esc(path.stem)}"></div>
+</section></div>
+<footer class="editor-status" id="editor-line-count" hidden></footer>
+</section></form>
+<aside class="editor-sidebar" aria-label="Article settings and images">
+<details class="editor-card editor-details" open><summary>Article details</summary>
+<div class="editor-fields">{basics}{types}{status}{translation}</div></details>
+<details class="editor-card"><summary>Classification</summary>
+<div class="editor-fields">{classification}{self.related_field(metadata, form_id=form_id)}</div></details>
+{custom_section}
+<form class="editor-card editor-images" id="image-upload" method="post" action="{esc(article_url(path, "image"))}">
+{self.form_token()}<h2>Images</h2>
+<label class="editor-image-picker">Choose images
+<input id="image-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple></label>
+<p class="editor-help">You can also drop files here or paste an image into the Markdown editor.</p>
 <div id="image-queue"></div>
+<details class="editor-assets"><summary>Batch options</summary>
 <div class="grid">
 <label>Width for this batch (%)<input name="width" type="number" min="1" max="100" placeholder="Automatic"></label>
 <label>Indentation for list images (spaces)<input name="indent" type="number" min="0" max="24" placeholder="Automatic"></label>
-</div>
-<p id="upload-error" role="status"></p><button type="submit">Attach images</button>
+</div></details>
+<button type="submit" class="button secondary">Insert images</button>
+<p id="upload-error" role="status"></p>
 <noscript><p>Enable JavaScript to attach images through this form.</p></noscript>
-<ul>{assets}</ul></form>''',
+{assets_section}</form>
+</aside></div>''',
+            editor=True,
         )
+
+    def preview(self, values):
+        path = self.path_from(values)
+        if not path.is_file():
+            raise ValueError("Open an existing article to preview its Markdown.")
+        self.send_content(render_body(self.repo, path, values.get("body", "")))
 
     def edit(self, values):
         """Reject stale editor tabs so a save cannot silently overwrite a newer edit."""
@@ -621,12 +765,23 @@ class Handler(BaseHTTPRequestHandler):
                     )
                 updates["source_revision"] = revision
             new_body = values.get("body", "")
-            if body.strip() != new_body.strip() or any(
+            changed = body.strip() != new_body.strip() or any(
                 metadata.get(key) != value for key, value in updates.items()
-            ):
+            )
+            for name, value in self.submitted_custom_metadata(values).items():
+                if value is None:
+                    if name in metadata:
+                        changed = True
+                        del metadata[name]
+                elif (
+                    metadata.get(name) != value
+                    or type(metadata.get(name)) is not type(value)
+                ):
+                    changed = True
+                    metadata[name] = value
+            if changed:
                 updates["revision"] = metadata["revision"] + 1
                 updates["updated_on"] = date.today().isoformat()
-                # Preserve organization-defined fields that the editor does not expose.
                 save_article(path, {**metadata, **updates}, new_body)
         self.redirect(article_url(path))
 

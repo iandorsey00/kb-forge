@@ -19,6 +19,62 @@ IMAGE_TYPES = {
 }
 STATUSES = ("draft", "published", "retired")
 LIST_FIELDS = ("products", "categories", "regions", "countries", "tags")
+BUILTIN_FIELDS = {
+    "id",
+    "language",
+    "title",
+    "owner",
+    "author",
+    "type",
+    "status",
+    "revision",
+    "updated_on",
+    "review_on",
+    "description",
+    "related",
+    "translation_of",
+    "source_revision",
+    "previous_ids",
+    "cover_pdf",
+    "release_note",
+    *LIST_FIELDS,
+}
+CUSTOM_TYPES = {"boolean": bool, "integer": int, "string": str}
+
+
+def custom_value_matches(kind, value):
+    if kind == "string":
+        return (
+            isinstance(value, str)
+            and bool(value.strip())
+            and "\r" not in value
+            and "\n" not in value
+        )
+    return type(value) is CUSTOM_TYPES[kind]
+
+
+def custom_field_definitions(config):
+    fields = config.get("metadata_fields", {})
+    if not isinstance(fields, dict):
+        raise ValueError("metadata_fields must be an object.")
+    for name, definition in fields.items():
+        if not TOKEN.fullmatch(name) or name in BUILTIN_FIELDS:
+            raise ValueError(f"Invalid or reserved custom metadata field name: {name}.")
+        if not isinstance(definition, dict) or definition.keys() - {
+            "type", "label", "default"
+        }:
+            raise ValueError(f"{name}: specify type and optionally label and default.")
+        kind = definition.get("type")
+        if not isinstance(kind, str) or kind not in CUSTOM_TYPES:
+            raise ValueError(f"{name}: choose type boolean, integer, or string.")
+        label = definition.get("label", name)
+        if not isinstance(label, str) or not label.strip():
+            raise ValueError(f"{name}: use a nonempty label.")
+        if "default" in definition and not custom_value_matches(
+            kind, definition["default"]
+        ):
+            raise ValueError(f"{name}: the default must match type {kind}.")
+    return fields
 
 
 def atomic_text(path, content):
@@ -153,6 +209,7 @@ class Repository:
         self.config = read_mapping(
             self.path("kbforge.yaml").read_text(encoding="utf-8")
         )
+        self.custom_fields = custom_field_definitions(self.config)
         ids = self.config["identifiers"]
         if (
             not TOKEN.fullmatch(ids["prefix"])
@@ -256,6 +313,15 @@ class Repository:
             "revision": 1,
             "updated_on": date.today().isoformat(),
         }
+        for name, definition in self.custom_fields.items():
+            value = metadata.get(name, definition.get("default"))
+            if value is None:
+                metadata.pop(name, None)
+            else:
+                kind = definition["type"]
+                if not custom_value_matches(kind, value):
+                    raise ValueError(f"{name}: the value must match type {kind}.")
+                metadata[name] = value
         if translation_of:
             source_id, _, source_language = translation_of.partition("/")
             source, _ = load_article(self.article_path(source_id, source_language))
@@ -414,6 +480,10 @@ class Repository:
                     report(
                         "Error", path, f"Set {field} to an array of nonempty strings."
                     )
+            for name, definition in self.custom_fields.items():
+                kind = definition["type"]
+                if name in metadata and not custom_value_matches(kind, metadata[name]):
+                    report("Error", path, f"Set {name} to type {kind} or remove it.")
             if metadata.get("status") not in STATUSES:
                 report("Error", path, "Set status to draft, published, or retired.")
             if type(metadata.get("revision")) is not int or metadata["revision"] < 1:

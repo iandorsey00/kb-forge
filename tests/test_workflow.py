@@ -20,6 +20,7 @@ from kbforge.repository import (
     initialize_collection,
     load_article,
     save_article,
+    write_json,
 )
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "example"
@@ -33,7 +34,26 @@ class WorkflowTest(unittest.TestCase):
         shutil.copytree(EXAMPLE, self.root)
         self.repo = Repository(self.root)
 
+    def test_invalid_custom_metadata_definitions(self):
+        for name, definition in (
+            ("status", {"type": "string"}),
+            ("internal", {"type": "boolean", "default": "false"}),
+            ("legacy_id", {"type": "integer", "default": False}),
+        ):
+            with self.subTest(name=name):
+                config = {**self.repo.config, "metadata_fields": {name: definition}}
+                write_json(self.root / "kbforge.yaml", config)
+                with self.assertRaisesRegex(ValueError, name):
+                    Repository(self.root)
+
     def test_article_workflow_over_http(self):
+        self.repo.config["metadata_fields"] = {
+            "internal": {"type": "boolean", "label": "Internal", "default": False},
+            "legacy_id": {"type": "integer", "default": 0},
+            "audience": {"type": "string"},
+        }
+        write_json(self.root / "kbforge.yaml", self.repo.config)
+        self.repo = Repository(self.root)
         server = SimpleNamespace(server_port=8765, write_lock=threading.Lock())
 
         class InMemoryHandler(Handler):
@@ -78,7 +98,13 @@ class WorkflowTest(unittest.TestCase):
             )
 
         self.assertEqual(get("/update-status"), "Updates")
-        self.assertIn("Create draft", get("/create"))
+        create_form = get("/create")
+        self.assertIn("Create draft", create_form)
+        self.assertIn('Internal<select name="custom.internal">', create_form)
+        self.assertIn('<option value="false" selected>False</option>', create_form)
+        self.assertIn('name="custom.legacy_id" type="text" value="0"', create_form)
+        existing_form = get("/edit?id=FIELD-000001&language=en-US")
+        self.assertNotIn('<option value="false" selected>', existing_form)
         server.update_available = True
         self.assertEqual(get("/update-status"), "Update app…")
         updates = get("/updates")
@@ -94,9 +120,25 @@ class WorkflowTest(unittest.TestCase):
             type="procedure",
             tags="field-test",
             review_on="2030-06-01",
+            **{"custom.audience": "Field technicians"},
         )
         self.assertIn("FIELD-000005", editor)
+        path = self.repo.article_path("FIELD-000005", "en-US")
+        metadata, body = load_article(path)
+        self.assertIs(metadata["internal"], False)
+        self.assertIs(type(metadata["legacy_id"]), int)
+        self.assertEqual(metadata["legacy_id"], 0)
+        self.assertEqual(metadata["audience"], "Field technicians")
+        metadata["external_reference"] = {"id": 37}
+        save_article(path, metadata, body)
         query = "?id=FIELD-000005&language=en-US"
+        editor = get("/edit" + query)
+        self.assertIn('name="custom.audience" type="text" value="Field technicians" form="article-editor"', editor)
+        saved = path.read_bytes()
+        preview = post("/preview" + query, body="## Unsaved draft\n\n**Bold**")
+        self.assertIn("<strong>Bold</strong>", preview)
+        self.assertIn("Unsaved draft", preview)
+        self.assertEqual(path.read_bytes(), saved)
         fingerprint = re.search(r'name="fingerprint" value="([a-f0-9]+)"', editor)[1]
         rendered = post(
             "/edit" + query,
@@ -108,8 +150,24 @@ class WorkflowTest(unittest.TestCase):
             tags="field-test",
             review_on="2030-06-01",
             body="## Purpose\n\nShow a table.\n\n## Steps\n\n| A | B |\n|---|---|\n| 1 | 2 |",
+            **{"custom.internal": "", "custom.legacy_id": "37"},
         )
         self.assertIn("<table>", rendered)
+        metadata, body = load_article(path)
+        self.assertNotIn("internal", metadata)
+        self.assertEqual(metadata["legacy_id"], 37)
+        self.assertEqual(metadata["audience"], "Field technicians")
+        self.assertEqual(metadata["external_reference"], {"id": 37})
+        save_article(path, {**metadata, "legacy_id": True}, body)
+        self.assertIn(
+            (
+                "Error",
+                "articles/FIELD-000005/en-US.md",
+                "Set legacy_id to type integer or remove it.",
+            ),
+            self.repo.validate(only_id="FIELD-000005"),
+        )
+        save_article(path, metadata, body)
         image = (
             EXAMPLE / "articles/FIELD-000001/assets/input-selector.png"
         ).read_bytes()
@@ -129,7 +187,6 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("data:image/png;base64,", published)
         self.assertIn("Print or save as PDF", published)
         self.assertNotIn("FIELD-000005", get("/validate"))
-        path = self.repo.article_path("FIELD-000005", "en-US")
         self.assertEqual(load_article(path)[0]["revision"], 4)
         self.assertIn("![Example screen](assets/my-screenshot-2.png)", path.read_text())
         self.assertEqual(
