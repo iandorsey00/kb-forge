@@ -14,7 +14,7 @@
 | `articles/<id>/assets/` | 同一篇文章的各语言版本共用的图片目录 |
 | `branding/` | 存放配置引用的可选品牌图片 |
 
-使用 UTF-8 编码。配置、登记表和文件开头的元数据采用 JSON 对象语法，这种语法也符合 YAML 1.2。最小可用版本支持这一语法子集。元数据区块前后的 `---` 各自独占一行。正文使用 GitHub 风格的 Markdown，支持标题、列表、表格、代码和相对链接。品牌预览会过滤原始 HTML，并显示符合要求的本地图片。参见[完整的英文文章](../example/articles/FIELD-000001/en-US.md)及其[简体中文版](../example/articles/FIELD-000001/zh-CN.md)。
+使用 UTF-8 编码。配置、登记表和文件开头的元数据采用 JSON 对象语法，这种语法也符合 YAML 1.2。KB Forge 支持这一语法子集。元数据区块前后的 `---` 各自独占一行。正文使用 GitHub 风格的 Markdown，支持标题、列表、表格、代码和相对链接。品牌预览会过滤原始 HTML，并显示符合要求的本地图片。参见[完整的英文文章](../example/articles/FIELD-000001/en-US.md)及其[简体中文版](../example/articles/FIELD-000001/zh-CN.md)。
 
 ## 文章元数据
 
@@ -90,9 +90,44 @@ HTML 页面显示品牌图片和 HTML 标题区。在 **Publish**（发布）中
 
 ### 工作区品牌样式与字体
 
-可选的 `workspace` 对象控制 KB Forge 界面样式。可设置 `name`、`branding/` 下的可选 `logo` 文件名，以及六位十六进制颜色 `accent`、`navigation` 和 `background`。强调色用于主按钮背景、次要按钮边框和文字，以及链接。建议使用深色强调色和导航栏背景搭配白色文字，并使用浅色背景搭配深色正文。文章样式仍由 `branding` 和 `publishing` 控制。
+可选的 `workspace` 对象控制 KB Forge 界面及导出站点的外层布局。可设置 `name`、`branding/` 下的可选 `logo` 文件名，以及六位十六进制颜色 `accent`、`navigation` 和 `background`。导出首页和文章导航优先使用工作区名称和标识，默认沿用知识库名称和标识。站点链接、首页页眉和页面背景沿用对应的配色。建议使用深色强调色和导航栏背景搭配白色文字，并使用浅色背景搭配深色正文。文章本身的样式（包括 PDF 图片）由 `branding` 和 `publishing` 控制。
 
-可通过 `publishing.font` 指定 `branding/` 下的 TrueType 字体文件（`.ttf` 或 `.ttc`），也可将本机环境变量 `KBFORGE_PDF_FONT` 设为字体的绝对路径。KB Forge 会嵌入所用字形。生成中文文档时，还会尝试 macOS 上的 Arial Unicode、Windows 上的微软雅黑及 Linux 上的文泉驿正黑。若这些字体不可用，请配置包含所需字形的中日韩 TrueType 字体。
+### 发布字体
+
+将 TrueType 字体放在知识库的 `branding/` 目录中。示例知识库附带以下可选的原始字体文件及其 SIL 开放字体许可证。请复制要使用的字体及其许可证：
+
+- Inter Variable 4.1 正体和斜体，用于文档正文。[许可证](../example/branding/Inter-OFL.txt)
+- Noto Sans CJK SC 2.004，用于简体中文。此地区版本约为 17 MiB。[上游项目](https://github.com/notofonts/noto-cjk/tree/Sans2.004) · [许可证](../example/branding/NotoSansCJK-OFL.txt)
+- Source Code Pro 2.042 常规字重，用于等宽文本。[上游项目](https://github.com/adobe-fonts/source-code-pro/releases) · [许可证](../example/branding/SourceCodePro-OFL.txt)
+
+在 `kbforge.yaml` 中加入所需设置。以下示例使用全部三个字体族：
+
+```json
+{
+  "publishing": {
+    "fonts": {
+      "regular": "InterVariable.ttf",
+      "italic": "InterVariable-Italic.ttf"
+    },
+    "font_fallbacks": {"zh-CN": "NotoSansSC-VF.ttf"},
+    "code_font": "SourceCodePro-Regular.ttf",
+    "font_weights": {
+      "body": 400,
+      "heading": 600,
+      "caption": 400
+    },
+    "font_licenses": ["Inter-OFL.txt", "NotoSansCJK-OFL.txt", "SourceCodePro-OFL.txt"]
+  }
+}
+```
+
+- 定义字体族时，必须提供 `fonts.regular`。静态字体族还可分别提供 `bold`、`italic` 和 `bold_italic` 文件。可变字体的正体和斜体文件可分别提供各自的字重。如果没有单独的斜体文件，带有 `ital` 或 `slnt` 轴的正体文件也可提供倾斜字形。
+- `font_weights` 为可选项。正文和图注默认使用 400，标题默认使用 700。各项均接受 1 至 1000 的整数。Markdown 加粗至少使用字重 700，强调使用斜体，嵌套强调可同时应用两种样式。可变字体根据 `wght` 轴的有效范围应用所需字重。PDF 中其他轴使用默认值，`ital` 和 `slnt` 可用于选择字形样式。静态字体族在 PDF 中会选用所需样式里字重最接近的字体。没有斜体时会使用正体。
+- `font_fallbacks` 可将语言标签或 `default` 映射到字体文件名或另一组字体配置。KB Forge 依次尝试主字体、匹配语言的回退字体、默认回退字体及其他已配置的回退字体。PDF 缺少中文字形时，还可尝试系统的中日韩字体。若依然缺少字形，导出会提示具体字符。
+- `code_font` 为可选项，接受 TrueType `.ttf` 文件名。它控制 PDF 围栏代码块和 HTML 中行内及围栏代码的字体。PDF 代码默认使用 Courier，并使用发布字体族或其回退字体补足其他字形。
+- 交互式文章查看器和导出的 HTML 使用本地 TrueType `.ttf` 文件，通过 CSS 声明字重范围。导出的站点包含引用的字体和许可证说明，供离线使用。PDF 通过 FontTools 在内存中生成可变 TrueType 字体的静态实例，并嵌入所需字形。PDF 支持 TrueType 字体集合（`.ttc` 的首个字体）。目前不支持 CFF 和 CFF2 OpenType 轮廓。
+- 仍可通过 `publishing.font` 指定单个字体。PDF 依次采用 `publishing.fonts`、`publishing.font`、`KBFORGE_PDF_FONT` 环境变量中的绝对路径，最后使用内置字体。环境变量仅用于 PDF。已有知识库无需迁移配置。
+- 主题包会保留引用的字体、许可证说明和设置。共享自定义字体前，请确认再分发许可，并在 `font_licenses` 中列出随附的版权或许可证文件名。[Inter 官方发布](https://github.com/rsms/inter/releases) · [SIL 开放字体许可证常见问题](https://openfontlicense.org/ofl-faq/)
 
 ### 自定义 PDF 封面布局
 

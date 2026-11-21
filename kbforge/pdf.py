@@ -6,6 +6,7 @@ from pathlib import Path
 from importlib.util import find_spec
 
 from .repository import image_width, load_article, pandoc
+from .fonts import code_font, publication_fonts
 from urllib.parse import unquote, urlsplit
 
 
@@ -105,16 +106,15 @@ def cover_layout(settings):
     return layout
 
 
-def inline(nodes):
-    parts = []
+def inline_runs(nodes, bold=False, italic=False):
     for node in nodes:
         kind, value = node["t"], node.get("c")
         if kind in ("Str", "Code", "Math"):
-            parts.append(value if kind == "Str" else value[1])
+            yield (value if kind == "Str" else value[1]), bold, italic
         elif kind in ("Space", "SoftBreak", "LineBreak"):
-            parts.append("\n" if kind == "LineBreak" else " ")
+            yield ("\n" if kind == "LineBreak" else " "), bold, italic
         elif kind in ("Link", "Image", "Span", "Quoted"):
-            parts.append(inline(value[1]))
+            yield from inline_runs(value[1], bold, italic)
         elif kind in (
             "Emph",
             "Strong",
@@ -123,8 +123,13 @@ def inline(nodes):
             "Superscript",
             "Subscript",
         ):
-            parts.append(inline(value))
-    return "".join(parts)
+            yield from inline_runs(
+                value, bold or kind == "Strong", italic or kind == "Emph"
+            )
+
+
+def inline(nodes):
+    return "".join(text for text, _, _ in inline_runs(nodes))
 
 
 def pdf_table(value):
@@ -152,7 +157,12 @@ def pdf_blocks(repo, path, blocks):
         kind, value = node["t"], node.get("c")
         if kind == "Header":
             level, _, title = value
-            yield {"kind": "heading", "level": level, "text": inline(title)}
+            yield {
+                "kind": "heading",
+                "level": level,
+                "text": inline(title),
+                "runs": list(inline_runs(title)),
+            }
         elif kind in ("Para", "Plain"):
             pending = []
             for item in value:
@@ -160,7 +170,11 @@ def pdf_blocks(repo, path, blocks):
                     pending.append(item)
                     continue
                 if inline(pending).strip():
-                    yield {"kind": "text", "text": inline(pending)}
+                    yield {
+                        "kind": "text",
+                        "text": inline(pending),
+                        "runs": list(inline_runs(pending)),
+                    }
                 pending = []
                 reference = item["c"][2][0]
                 parts = urlsplit(reference)
@@ -182,7 +196,11 @@ def pdf_blocks(repo, path, blocks):
                     "width": image_width(item["c"][0]),
                 }
             if inline(pending).strip():
-                yield {"kind": "text", "text": inline(pending)}
+                yield {
+                    "kind": "text",
+                    "text": inline(pending),
+                    "runs": list(inline_runs(pending)),
+                }
         elif kind in ("BulletList", "OrderedList"):
             start, items = (
                 (None, value) if kind == "BulletList" else (value[0][0], value[1])
@@ -248,8 +266,8 @@ def export_pdf(repo, path):
                 "publishing.body_font_size must be between 8 and 18 points."
             )
         theme["body_font_size"] = size
-    if settings.get("font"):
-        theme["font"] = str(theme_asset(repo, settings["font"], {".ttf", ".ttc"}))
+    theme["typography"] = publication_fonts(repo)
+    theme["code_font"] = code_font(repo)
     if not theme.get("cover_pdf"):
         theme["cover_layout"] = cover_layout(settings)
     theme["organization"] = repo.config["branding"].get("name", "")

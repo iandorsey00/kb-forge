@@ -1,5 +1,23 @@
 # Changelog · 更新日志
 
+## v0.6.0
+
+- Add article body search to the workspace and offline search to the redesigned exported site.
+- Distinguish fenced text and code in PDFs with shaded, padded blocks that preserve indentation.
+- Use static or variable TrueType families with real PDF weights, Markdown emphasis, multilingual fallback, and offline web font assets.
+- Include optional Noto Sans CJK SC and Source Code Pro fonts with their license notices, and apply workspace branding to exported site navigation and homepages.
+- Highlight the existing Updates link when a fast-forward app update is available.
+- Document collection renaming and scheduled backups on Windows, macOS, and Linux.
+
+### 简体中文
+
+- 工作区支持搜索文章正文，重新设计的导出站点支持离线搜索。
+- PDF 中的围栏文本和代码块带有底色和内边距，并保留缩进。
+- 支持静态或可变 TrueType 字体族、PDF 字重、Markdown 强调、多语言回退和离线网页字体资源。
+- 提供可选的 Noto Sans CJK SC 和 Source Code Pro 字体及许可证，并将工作区品牌样式应用于导出站点首页和导航。
+- 有可快进应用的更新时，突出显示导航栏中已有的更新入口。
+- 记录知识库重命名及 Windows、macOS 和 Linux 上的定时备份方法。
+
 ## v0.5.0
 
 - Use `--export-site` to export a static site with branded PDFs and download links. The HTML and PDF for each edition sit side by side under `articles/<id>/`. Add `--html-only` for HTML-only output.

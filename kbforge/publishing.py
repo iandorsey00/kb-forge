@@ -3,16 +3,20 @@
 import base64
 import html
 from hashlib import file_digest, sha256
+from html.parser import HTMLParser
 import json
 import mimetypes
 from pathlib import Path
 from posixpath import relpath
+import re
 import subprocess
 from urllib.parse import quote, unquote, urlencode, urlsplit
 
 from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, pdf_theme, theme_asset
+from .fonts import font_notices, web_fonts
 from .repository import (
     ASSET,
+    LIST_FIELDS,
     article_author,
     image_width,
     load_article,
@@ -22,6 +26,31 @@ from .repository import (
 
 def esc(value):
     return html.escape(str(value), quote=True)
+
+
+def workspace_palette(workspace):
+    """Use the same validated workspace colors in the app and reader site."""
+    return ";".join(
+        f"--workspace-{key}:{value}"
+        for key in ("accent", "navigation", "background")
+        if isinstance(value := workspace.get(key), str)
+        and re.fullmatch(r"#[0-9a-fA-F]{6}", value)
+    )
+
+
+class SearchText(HTMLParser):
+    """Collect the visible prose and image descriptions from a rendered article."""
+
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+
+    def handle_data(self, data):
+        self.parts.append(data)
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "img" and (alt := dict(attrs).get("alt")):
+            self.parts.append(alt)
 
 
 def article_url(path, page="article"):
@@ -130,8 +159,6 @@ def render_body(repo, path, body, link_for=article_url):
 
 
 def branded_article(repo, path, link_for=article_url):
-    import re
-
     metadata, body = load_article(path)
     brand = repo.config["branding"]
     color = brand.get("color", "")
@@ -267,6 +294,28 @@ def export_html(repo, destination, *, include_pdfs=True, release=None, published
 
     if published is None:
         published = site_editions(repo, include_pdfs)
+    brand = repo.config["branding"]
+    workspace = repo.config.get("workspace", {})
+    name = workspace.get("name") or brand["name"]
+    accent = brand.get("color", "")
+    if not isinstance(accent, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", accent):
+        accent = "#245450"
+    logo = ""
+    if logo_name := workspace.get("logo") or brand.get("logo"):
+        asset = theme_asset(repo, logo_name, IMAGE_SUFFIXES)
+        logo = f'<img src="{esc(image_data(asset))}" alt="">'
+    site_style = f"--site-brand:{accent};{workspace_palette(workspace)}"
+    home_language = repo.config["languages"][0]
+    chinese = home_language.lower().startswith("zh")
+    search_script = (
+        Path(__file__).with_name("site_search.js").read_text(encoding="utf-8")
+    )
+    script_hash = base64.b64encode(
+        sha256(search_script.encode("utf-8")).digest()
+    ).decode("ascii")
+    font_css, font_assets = web_fonts(repo, lambda name: f"fonts/{name}")
+    for notice in font_notices(repo.config.get("publishing", {})):
+        font_assets[notice] = theme_asset(repo, notice, {".txt"}).read_bytes()
 
     def link_for(path, start="."):
         resolved = path.resolve()
@@ -276,12 +325,20 @@ def export_html(repo, destination, *, include_pdfs=True, release=None, published
             else None
         )
 
-    def page(title, content, language="en", stylesheet="style.css"):
+    def page(title, content, language, stylesheet="style.css", homepage=False):
+        script_policy = f"; script-src 'sha256-{script_hash}'" if homepage else ""
+        script = f"<script>{search_script}</script>" if homepage else ""
+        layout = "reader-home" if homepage else "reader-article"
+        fonts_link = (
+            f'<link rel="stylesheet" href="{esc(stylesheet.removesuffix("style.css") + "fonts.css")}">'
+            if font_css and not homepage
+            else ""
+        )
         return f"""<!doctype html><html lang="{esc(language)}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
-<title>{esc(title)}</title><link rel="stylesheet" href="{esc(stylesheet)}">
-</head><body><main>{content}</main></body></html>"""
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; img-src data:; font-src 'self'; base-uri 'none'; form-action 'none'{script_policy}">
+<title>{esc(title)}</title><link rel="stylesheet" href="{esc(stylesheet)}">{fonts_link}
+</head><body class="reader-site" style="{esc(site_style)}"><main class="{layout}">{content}</main>{script}</body></html>"""
 
     if published and include_pdfs and not pdf_available():
         raise ValueError(
@@ -300,6 +357,15 @@ def export_html(repo, destination, *, include_pdfs=True, release=None, published
         (destination / "style.css").write_bytes(
             Path(__file__).with_name("style.css").read_bytes()
         )
+        assets = []
+        if font_css:
+            (destination / "fonts.css").write_text(font_css, encoding="utf-8")
+            assets.append("fonts.css")
+        if font_assets:
+            (destination / "fonts").mkdir()
+            for asset, data in font_assets.items():
+                (destination / "fonts" / asset).write_bytes(data)
+                assets.append(f"fonts/{asset}")
         entries = []
         index_links = {}
         for path, edition in published.items():
@@ -321,50 +387,95 @@ def export_html(repo, destination, *, include_pdfs=True, release=None, published
                     "下载 PDF" if path.stem.lower().startswith("zh") else "Download PDF"
                 )
                 index_pdf = quote(pdf_path.relative_to(destination).as_posix())
-                index_download = f' · <a href="{esc(index_pdf)}" download>{label}</a>'
-                article_download = (
-                    f' · <a href="{esc(quote(pdf_path.name))}" download>{label}</a>'
-                )
-            link = f'<a href="{esc(link_for(path))}">{esc(title)}</a> · {esc(language)}{index_download}'
+                index_download = f'<a class="reader-pdf" href="{esc(index_pdf)}" download>{label}</a>'
+                article_download = f'<a class="reader-pdf" href="{esc(quote(pdf_path.name))}" download>{label}</a>'
+            article_html = branded_article(
+                repo, path, lambda other: link_for(other, article_folder)
+            )
+            visible = SearchText()
+            visible.feed(article_html)
+            metadata, _ = load_article(path)
+            search_text = " ".join(
+                [*visible.parts, edition["id"], language]
+                + [str(metadata.get(key, "")) for key in LIST_FIELDS]
+            )
+            description = metadata.get("description")
+            summary = f"<p>{esc(description)}</p>" if description else ""
+            link = f'<a href="{esc(link_for(path))}">{esc(title)}</a>'
             index_links[edition["html"]] = link
-            entries.append(f"<li>{link}</li>")
+            entries.append(
+                f'<li data-search="{esc(search_text)}"><div><h3>{link}</h3>'
+                f'<span class="reader-meta">{esc(edition["id"])} · {esc(language)}</span>'
+                f"{summary}</div>{index_download}</li>"
+            )
+            back = "所有文章" if language.lower().startswith("zh") else "All articles"
             content = (
-                f'<p><a href="../../index.html">All articles</a>{article_download}</p>'
-                + branded_article(
-                    repo, path, lambda other: link_for(other, article_folder)
-                )
+                f'<nav class="actions" aria-label="{esc(back)}">'
+                f'<a class="reader-site-home" href="../../index.html" aria-label="{esc(back + " · " + str(name))}">'
+                f"{logo}<span>{esc(name)}</span></a>{article_download}</nav>{article_html}"
             )
             output.write_text(
                 page(title, content, language, "../../style.css"), encoding="utf-8"
             )
-        name = repo.config["branding"]["name"]
+        no_articles = "暂无已发布的文章。" if chinese else "No published articles."
         listing = (
-            "<ul>" + "".join(entries) + "</ul>"
+            '<ul class="reader-list">' + "".join(entries) + "</ul>"
             if entries
-            else "<p>No published articles.</p>"
+            else f"<p>{no_articles}</p>"
         )
         bulletin = []
         for change in (release or {}).get("recent_changes", []):
             day = esc(change["date"])
-            label = "New" if change["kind"] == "new" else "Updated"
+            labels = ("新增", "更新") if chinese else ("New", "Updated")
+            label = labels[0] if change["kind"] == "new" else labels[1]
             link = index_links[change["html"]]
-            note = f" — {esc(change['note'])}" if change.get("note") else ""
+            note = f"<p>{esc(change['note'])}</p>" if change.get("note") else ""
             bulletin.append(
-                f'<li><time datetime="{day}">{day}</time> · {label} · {link}{note}</li>'
+                f'<li><span class="reader-meta"><time datetime="{day}">{day}</time> · {label}</span>{link}{note}</li>'
             )
+        updates = "最新动态" if chinese else "What’s new"
         whats_new = (
-            "<section><h2>What’s new</h2><ul>" + "".join(bulletin) + "</ul></section>"
+            f'<aside class="reader-updates"><h2>{updates}</h2><ul>'
+            + "".join(bulletin)
+            + "</ul></aside>"
             if bulletin
             else ""
         )
+        search_label, placeholder, result_count, empty, heading = (
+            (
+                "搜索文章",
+                "按标题、编号或正文搜索",
+                "找到 {count} 个结果",
+                "没有匹配的文章。",
+                "文章",
+            )
+            if chinese
+            else (
+                "Search articles",
+                "Search by title, ID, or text",
+                "Matching articles ({count})",
+                "No matching articles.",
+                "Articles",
+            )
+        )
+        search = f'''<form id="reader-search" class="reader-search" role="search" hidden>
+<label for="reader-query">{search_label}</label>
+<input id="reader-query" type="search" placeholder="{placeholder}">
+<p role="status" data-count="{result_count}" data-empty="{empty}"></p></form>'''
+        content = (
+            f'<header class="reader-hero">{logo}<h1>{esc(name)}</h1>{search if entries else ""}</header>'
+            f'<div class="reader-layout"><section><h2>{heading}</h2>{listing}</section>{whats_new}</div>'
+        )
         (destination / "index.html").write_text(
-            page(name, f"<h1>{esc(name)}</h1>{whats_new}{listing}"), encoding="utf-8"
+            page(name, content, home_language, homepage=bool(entries)), encoding="utf-8"
         )
         manifest = {
             "version": 1,
             "editions": list(published.values()),
             **(release or {}),
         }
+        if assets:
+            manifest["font_assets"] = assets
         (destination / "manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )

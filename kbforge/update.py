@@ -8,19 +8,24 @@ SOURCE_ROOT = Path(__file__).resolve().parent.parent
 RELEASES_URL = "https://github.com/iandorsey00/kb-forge/releases"
 
 
-def git(root, *args):
+def git(root, *args, timeout=45, background=False):
     try:
         result = subprocess.run(
             ["git", "-C", str(root), *args],
             env={
                 **os.environ,
                 "GIT_TERMINAL_PROMPT": "0",
+                **(
+                    {"GCM_INTERACTIVE": "never", "SSH_ASKPASS_REQUIRE": "never"}
+                    if background
+                    else {}
+                ),
             },
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             errors="replace",
-            timeout=45,
+            timeout=timeout,
         )
     except FileNotFoundError as error:
         raise ValueError(
@@ -40,8 +45,7 @@ def git(root, *args):
     return result.stdout.strip()
 
 
-def update_checkout(root=SOURCE_ROOT):
-    """Fetch the configured upstream and apply it only as a fast-forward."""
+def upstream_branch(root):
     if not (root / ".git").exists():
         raise ValueError(
             f"This installation has no Git checkout. Download the new version from {RELEASES_URL} "
@@ -63,6 +67,42 @@ def update_checkout(root=SOURCE_ROOT):
         ) from error
     if not upstream.startswith("refs/remotes/") or remote == ".":
         raise ValueError("Configure an upstream remote branch before updating.")
+    return branch, remote, upstream
+
+
+def update_available(root=SOURCE_ROOT):
+    """Refresh tracking refs without changing the checked-out branch or files."""
+    try:
+        branch, remote, upstream = upstream_branch(root)
+        before = git(root, "rev-parse", "HEAD")
+        remote_branch = git(root, "config", "--get", f"branch.{branch}.merge")
+        if not remote_branch.startswith("refs/heads/"):
+            return False
+        git(
+            root,
+            "fetch",
+            "--no-tags",
+            "--no-write-fetch-head",
+            "--",
+            remote,
+            remote_branch,
+            timeout=10,
+            background=True,
+        )
+        target = git(root, "rev-parse", "--verify", upstream)
+        return (
+            before != target
+            and git(root, "merge-base", before, target) == before
+            and git(root, "rev-parse", "HEAD") == before
+            and git(root, "branch", "--show-current") == branch
+        )
+    except (OSError, ValueError):
+        return False
+
+
+def update_checkout(root=SOURCE_ROOT):
+    """Fetch the configured upstream and apply it only as a fast-forward."""
+    branch, remote, upstream = upstream_branch(root)
     if git(root, "status", "--porcelain", "--untracked-files=no"):
         raise ValueError(
             "Tracked checkout changes block the update. Review them with git status --short "

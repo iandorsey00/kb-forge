@@ -5,7 +5,7 @@ import shutil
 from tempfile import TemporaryDirectory
 import unittest
 
-from kbforge.update import git, update_checkout
+from kbforge.update import git, update_available, update_checkout
 
 
 @unittest.skipUnless(shutil.which("git"), "Git is unavailable")
@@ -33,10 +33,15 @@ class UpdateTest(unittest.TestCase):
             git(upstream, *commit, "-m", "Initial")
             git(root, "clone", str(upstream), str(checkout))
             self.assertIsNone(update_checkout(checkout))
+            self.assertFalse(update_available(checkout))
 
             source.write_text("updated", encoding="utf-8")
             git(upstream, *commit, "-am", "Upstream update")
             local = checkout / "app.txt"
+            previous = git(checkout, "rev-parse", "HEAD")
+            self.assertTrue(update_available(checkout))
+            self.assertEqual(git(checkout, "rev-parse", "HEAD"), previous)
+            self.assertEqual(local.read_text(encoding="utf-8"), "initial")
             local.write_text("unsaved", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "checkout changes"):
                 update_checkout(checkout)
@@ -46,11 +51,13 @@ class UpdateTest(unittest.TestCase):
             article.parent.mkdir()
             article.write_text("work article", encoding="utf-8")
             self.assertIsNotNone(update_checkout(checkout))
+            self.assertFalse(update_available(checkout))
             self.assertEqual(local.read_text(encoding="utf-8"), "updated")
             self.assertEqual(article.read_text(encoding="utf-8"), "work article")
 
             local.write_text("local commit", encoding="utf-8")
             git(checkout, *commit, "-am", "Local change")
+            self.assertFalse(update_available(checkout))
             with self.assertRaisesRegex(ValueError, "outside its upstream"):
                 update_checkout(checkout)
             self.assertEqual(local.read_text(encoding="utf-8"), "local commit")

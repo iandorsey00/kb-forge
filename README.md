@@ -2,25 +2,25 @@
 
 English · [简体中文](README.zh-CN.md)
 
-KB Forge is a planned toolkit for creating, organizing, validating, and publishing portable knowledge bases. Articles use Markdown with YAML front matter, and images and attachments are stored as ordinary files. The same collection should remain readable and maintainable with ordinary tools if an organization replaces KB Forge.
+KB Forge is a toolkit for creating, organizing, validating, and publishing portable knowledge bases. Articles use Markdown with YAML front matter, and images and attachments are stored as ordinary files. The same collection should remain readable and maintainable with ordinary tools if an organization replaces KB Forge.
 
 ![KB Forge showing a branded troubleshooting article from the fictional Northshore Field Services example collection](docs/images/kb-forge-example.png)
 
 ## Documentation
 
-English and Simplified Chinese (`zh-CN`) documentation are required for the MVP and for each release that changes a documented workflow. Both editions should be complete, easy to navigate, and linked to each other. Update both editions in the same change when behavior, configuration, or the standard changes.
+English and Simplified Chinese (`zh-CN`) documentation are required for each release that changes a documented workflow. Both editions should be complete, easy to navigate, and linked to each other. Update both editions in the same change when behavior, configuration, or the standard changes.
 
 The documentation should include:
 
 - **Documentation standard.** A dedicated, versioned specification that explains the directory layout, metadata fields and allowed values, permanent IDs and organization-defined prefixes, asset naming and placement, relative links, article relationships, translations, regional applicability, and the article lifecycle. Identify required rules, configurable defaults, and examples. Include a complete article and its assets that readers can inspect in a Markdown editor.
-- **Getting started and authoring.** Installation and setup, followed by a walkthrough of creating an article, adding an image, finding the article by metadata, fixing a validation finding, previewing the branded article, and exporting a PDF.
+- **Getting started and authoring.** Installation and setup, followed by a walkthrough of creating an article, adding an image, finding the article by text and metadata, fixing a validation finding, previewing the branded article, and exporting a PDF.
 - **Configuration and maintenance.** Examples for configuring IDs, metadata, templates, validation, and branding. Explain review and translation updates, common validation failures, and how to use and maintain the collection with ordinary tools.
 
 Keep commands, YAML keys, and identifiers consistent across editions. Translate the explanations, headings, captions, and other reader-facing text. Before release, follow the walkthrough in both languages, check example files and links, and verify that the Chinese sample renders legibly in HTML and PDF.
 
 This requirement applies to KB Forge's own documentation and its demonstration. Organizations can choose which languages to support in their collections, and individual articles may have a single language edition.
 
-## Run the MVP
+## Get started
 
 Install Python 3.11 or later and a current Pandoc with GFM `attributes` support (`pandoc --list-extensions=gfm`). Make sure both are available on your PATH. The workspace needs no cloud account or additional Python packages. The paginated PDF renderer uses optional dependencies.
 
@@ -58,7 +58,7 @@ python3 -m pip install -r requirements-pdf.txt
 python3 -m kbforge demo-work --export-pdf FIELD-000002 en-US --output article.pdf
 ```
 
-You can also use **Publish → Open branded PDF**. See the [publishing settings](docs/standard.md#branded-publishing) for cover art, page artwork, and Chinese fonts. Paginated export supports headings, paragraphs, lists, code blocks, local images, and Markdown pipe tables. Table cells use plain text, with alternative text in place of images. Browser print preserves rich inline formatting.
+You can also use **Publish → Open branded PDF**. See the [publishing settings](docs/standard.md#branded-publishing) for cover art, page artwork, and Chinese fonts. Paginated export supports headings, paragraphs, lists, code blocks, local images, and Markdown pipe tables. Fenced blocks, including fences labeled `text`, preserve whitespace and use a shaded box with monospace lettering for ASCII text. Table cells use plain text, with alternative text in place of images. Browser print preserves rich inline formatting.
 
 ### Move a theme to another collection
 
@@ -101,6 +101,8 @@ For a Git clone, use **Updates → Check and install update** or run the followi
 python3 -m kbforge --update
 ```
 
+The app checks your configured upstream at startup and every 15 minutes. That check refreshes Git tracking information. When a fast-forward update is available, the navbar's **Updates** link changes to **Update app…** and opens the same confirmation page. Installing still requires selecting **Check and install update**.
+
 KB Forge fetches the current branch's configured upstream and applies fast-forward updates. Git blocks collisions with local files. Use `git status --short` to inspect tracked edits if they block the update, and use Git to reconcile any local-only commits. The updater follows the upstream branch independently of release tags. After an in-app update, stop the server with **Ctrl+C** and launch it again. If optional PDF dependencies changed, reinstall them with the command above.
 
 For a ZIP installation, extract the [new release](https://github.com/iandorsey00/kb-forge/releases) alongside the old app folder, then launch the new copy with the path to your existing collection. Keep your collection outside the application folder so you can replace the software independently. Back up and open the collection successfully before removing the old installation.
@@ -116,6 +118,18 @@ python3 -m kbforge work-collection
 
 This creates a minimal configuration, an empty ID registry and article directory, and a generic article template. Use `--language` to set the first language (default `en-US`). Import a theme ZIP to add branding later. In Windows PowerShell, use `py` in place of `python3`.
 
+### Rename a collection
+
+Save your edits and stop KB Forge. Rename the collection folder, for example from `support-kb` to `support-kb-prerelease`, then open it with the new path:
+
+```sh
+python3 -m kbforge "/path/to/support-kb-prerelease"
+```
+
+Article IDs, internal links, and branding stay intact. Update any shortcuts, launch commands, or scheduled backup tasks that use the old path. If you also move the collection to a different parent directory, check relative backup and publishing paths in `kbforge.yaml`. Scheduled backups group archives by collection path, so the renamed collection starts a new backup series. Existing ZIPs remain restorable.
+
+To change the workspace name shown in the app and exported site navigation, set `workspace.name` in `kbforge.yaml`, restart KB Forge, and regenerate the site. To change the organization label inside published articles, set `branding.name` and regenerate the outputs.
+
 ### Work with many images
 
 Export the relevant pictures from the source presentation, or copy a screenshot to the clipboard. On the article edit page, select several files at once, drag them onto the editor or attachment form, or paste a clipboard image into the editor. Check the alternative text for each, set an optional **Width for this batch (%)**, and select **Attach images**. The Markdown references go below the current line in the order shown in the queue. The files are stored immediately. Save the draft to keep the references.
@@ -128,9 +142,9 @@ For images that belong to a list item, place the cursor on the line with its lis
 python3 -m kbforge work-collection --export-site --output published-site
 ```
 
-Install the PDF dependencies above and use a new output directory. The output includes an index, a shared stylesheet, a `manifest.json` listing edition IDs, languages, revisions, and relative output paths, and a branded HTML page and PDF for each published language edition. Each edition's files sit side by side at `articles/<id>/<language>.html` and `articles/<id>/<language>.pdf`, relative to the output directory. The homepage is `index.html` at the root, and both it and each article page link to the matching PDF. Images are embedded in the HTML, and site links are relative. Open `index.html` locally or copy the entire output directory to a static web host.
+Install the PDF dependencies above and use a new output directory. The output includes an index, a shared stylesheet, a `manifest.json` listing edition IDs, languages, revisions, and relative output paths, and a branded HTML page and PDF for each published language edition. Each edition's files sit side by side at `articles/<id>/<language>.html` and `articles/<id>/<language>.pdf`, relative to the output directory. The homepage is `index.html` at the root, and both it and each article page link to the matching PDF. The homepage searches published article text, titles, IDs, and tags with no server or network connection. In the KB Forge workspace, use the navigation search box or the catalog to search article text and metadata, including drafts. Images are embedded in the HTML, and site links are relative. Open `index.html` locally or copy the entire output directory to a static web host.
 
-If PDF generation fails, the export reports the article ID and language and removes the incomplete output. Chinese PDFs require a font with the needed glyphs. Use `--export-site --html-only` to omit PDFs and their links. That mode works without the PDF dependencies.
+If PDF generation fails, the export reports the article ID and language and removes the incomplete output. Chinese PDFs require a font with the needed glyphs. Use `--export-site --html-only` to omit PDFs and their links. HTML-only exports need FontTools when using custom web fonts, and can run without ReportLab or pypdf.
 
 ### Publish and roll back a site
 
@@ -213,7 +227,7 @@ Add a schedule to `kbforge.yaml`. This example backs up the collection every 24 
 }
 ```
 
-While KB Forge is running, it checks at startup and once a minute. It creates a verified ZIP on the first run, then another when the configured number of hours has passed since the last archive. Each ZIP is retained. To check the schedule while the app is closed, run the following command from the KB Forge checkout using cron, Windows Task Scheduler, or another OS scheduler. Use the full paths to your Python interpreter and collection when setting up the task.
+While KB Forge is running, it checks at startup and once a minute. It creates a verified ZIP on the first run, then another when the configured number of hours has passed since the last archive. Each ZIP is retained. To check the schedule while the app is closed, follow the [Windows Task Scheduler, macOS launchd, or Linux cron setup](docs/scheduled-backups.md). The scheduler runs this command from the KB Forge checkout.
 
 ```sh
 python3 -m kbforge work-collection --run-scheduled-backup
@@ -223,7 +237,7 @@ The editor is a loopback service for one local operator. Share exported sites wi
 
 ### Manage fonts, identifiers, and releases
 
-For a consistent Latin PDF font, place a static TrueType font such as Inter under `branding/` and set `publishing.font` to its filename. Chinese editions need a font with Chinese glyphs. Re-export from Markdown to apply font changes and recalculate pagination. An imported PDF cover keeps its original typography.
+Use a [static or variable font family](docs/standard.md#publication-fonts) for consistent typography in the article viewer, exported sites, and PDFs. The example includes Inter Variable, Noto Sans CJK SC for Simplified Chinese, and Source Code Pro for code, with their SIL Open Font License notices. Install the publishing dependencies above to enable font inspection and PDF embedding. Re-export from Markdown after changing fonts to recalculate pagination. An imported PDF cover keeps its original typography.
 
 Keep existing IDs as ownership changes. Switch the prefix for new articles when an official numbering scheme is adopted. If existing articles must be renumbered, keep an old-to-new map and preserve each original ID in metadata. Update references and regenerate the affected exports.
 

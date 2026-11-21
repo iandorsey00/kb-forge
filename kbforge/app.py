@@ -7,7 +7,6 @@ from datetime import date
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-import re
 import secrets
 import shutil
 import sys
@@ -17,9 +16,17 @@ from .backup import backup_collections, backup_schedule, run_scheduled_backup
 from .package import import_package
 from .theme import export_theme, import_theme
 from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, theme_asset
-from .publishing import export_html, article_url, branded_article, esc, image_data
+from .publishing import (
+    export_html,
+    article_url,
+    branded_article,
+    esc,
+    image_data,
+    workspace_palette,
+)
 from .site_release import change_lines, copy_site, publish_site, rollback_site
 from .collaboration import clone_site, push_site
+from .fonts import web_fonts
 from .repository import (
     LIST_FIELDS,
     STATUSES,
@@ -30,7 +37,7 @@ from .repository import (
     save_article,
 )
 
-from .update import RELEASES_URL, update_checkout
+from .update import RELEASES_URL, update_available, update_checkout
 from .renumber import renumber
 from .migrate import MIGRATIONS, migrate_articles
 
@@ -91,7 +98,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'none'; style-src 'self' 'unsafe-inline'; img-src data:; "
+            "default-src 'none'; style-src 'self' 'unsafe-inline'; img-src data:; font-src 'self'; "
             "script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
         )
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -99,14 +106,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def page(self, title, body, status=200):
+    def page(self, title, body, status=200, *, publication=False):
         brand = self.repo.config.get("workspace", {})
         name = esc(brand.get("name", "KB Forge"))
-        css = []
-        for setting in ("accent", "navigation", "background"):
-            value = brand.get(setting, "")
-            if isinstance(value, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", value):
-                css.append(f"--workspace-{setting}:{value}")
+        css = workspace_palette(brand)
         logo = ""
         if brand.get("logo"):
             try:
@@ -114,13 +117,20 @@ class Handler(BaseHTTPRequestHandler):
                 logo = f'<img class="workspace-logo" src="{esc(src)}" alt="">'
             except (ValueError, OSError):
                 pass
+        fonts = '<link rel="stylesheet" href="/fonts.css">' if publication else ""
+        update_label = self.update_label()
+        available = ' class="update-available"' if update_label == "Update app…" else ""
         self.send_content(
             f"""<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{esc(title)} | {name}</title><link rel="stylesheet" href="/style.css">
-<body style="{";".join(css)}">
+<title>{esc(title)} | {name}</title><link rel="stylesheet" href="/style.css">{fonts}
+<body style="{esc(css)}">
 <nav class="site" aria-label="Workspace"><strong><a href="/">{logo}{name}</a></strong>
-<a href="/catalog">Catalog</a><a href="/create">New article</a><a href="/validate">Validation</a><a href="/updates">Updates</a></nav>
+<a href="/catalog">Catalog</a><a href="/create">New article</a><a href="/validate">Validation</a>
+<a href="/updates" id="updates-link" aria-live="polite"{available}>{update_label}</a>
+<form class="workspace-search" action="/catalog" role="search">
+<input type="search" name="q" aria-label="Search articles" placeholder="Search articles">
+<button>Search</button></form></nav>
 <main>{body}</main><script src="/app.js" defer></script></body></html>""",
             status,
         )
@@ -165,6 +175,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/updates",
                 "/style.css",
                 "/app.js",
+                "/update-status",
             ):
                 self.page(
                     "Restart required",
@@ -180,6 +191,9 @@ class Handler(BaseHTTPRequestHandler):
                 ("POST", "/create"): self.create,
                 ("GET", "/validate"): self.validation,
                 ("GET", "/updates"): self.updates,
+                ("GET", "/update-status"): lambda _: self.send_content(
+                    self.update_label(), content_type="text/plain; charset=utf-8"
+                ),
                 ("POST", "/updates"): self.apply_update,
                 ("GET", "/article"): self.article,
                 ("GET", "/edit"): self.edit_form,
@@ -187,6 +201,8 @@ class Handler(BaseHTTPRequestHandler):
                 ("POST", "/image"): self.upload,
                 ("GET", "/publish"): self.publish,
                 ("GET", "/pdf"): self.pdf,
+                ("GET", "/fonts.css"): self.font_css,
+                ("GET", "/font"): self.font_file,
                 ("GET", "/style.css"): lambda _: self.send_content(
                     STYLE.read_bytes(), content_type="text/css"
                 ),
@@ -225,9 +241,20 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def updates(self, _):
+        if getattr(self.server, "restart_required", False):
+            self.page(
+                "Restart required",
+                "<h1>Restart required</h1><p>Stop KB Forge with Ctrl+C and run your launch command again.</p>",
+            )
+            return
+        notice = (
+            "<p>An update is available.</p>"
+            if self.update_label() == "Update app…"
+            else ""
+        )
         self.page(
             "Updates",
-            f"<h1>Update KB Forge</h1>"
+            f"<h1>Update KB Forge</h1>{notice}"
             "<p>Fetch and install the latest commit from this checkout’s configured upstream branch. "
             "Save any open article edits before updating.</p>"
             f'<p>Using a ZIP download? Get the <a href="{RELEASES_URL}">new release</a> '
@@ -236,8 +263,15 @@ class Handler(BaseHTTPRequestHandler):
             '<button type="submit">Check and install update</button></form>',
         )
 
+    def update_label(self):
+        if getattr(self.server, "restart_required", False):
+            return "Restart app"
+        if getattr(self.server, "update_available", False):
+            return "Update app…"
+        return "Updates"
+
     def apply_update(self, _):
-        with self.server.write_lock:
+        with self.server.update_lock, self.server.write_lock:
             if getattr(self.server, "restart_required", False):
                 self.page(
                     "Restart required",
@@ -245,6 +279,7 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             result = update_checkout()
+            self.server.update_available = False
             if result:
                 self.server.restart_required = True
         if result:
@@ -304,7 +339,9 @@ class Handler(BaseHTTPRequestHandler):
             "review_on": "Review date",
         }
         query = values.get("q", "").casefold().split()
-        for path, meta in catalog_rows(self.repo):
+        for path, meta, body, error in self.repo.scan():
+            if error:
+                continue
             searchable = " ".join(
                 str(meta.get(key, ""))
                 for key in (
@@ -314,11 +351,13 @@ class Handler(BaseHTTPRequestHandler):
                     "type",
                     "language",
                     "owner",
+                    "author",
                     "status",
                     "review_on",
                     *LIST_FIELDS,
                 )
-            ).casefold()
+            )
+            searchable = f"{searchable} {path.parent.name} {body}".casefold()
             if not all(term in searchable for term in query):
                 continue
             if any(
@@ -353,7 +392,9 @@ class Handler(BaseHTTPRequestHandler):
             for row, (key, _, _) in zip(rendered_rows, rows):
                 row.insert(0, esc(key))
         filters = (
-            field("q", "Search metadata", values.get("q", ""))
+            field(
+                "q", "Search articles and metadata", values.get("q", ""), kind="search"
+            )
             + select(
                 "language",
                 "Language",
@@ -466,6 +507,18 @@ class Handler(BaseHTTPRequestHandler):
     def path_from(self, values):
         return self.repo.article_path(values.get("id", ""), values.get("language", ""))
 
+    def font_css(self, _):
+        css, _ = web_fonts(self.repo, lambda name: f"/font?name={name}")
+        self.send_content(css, content_type="text/css; charset=utf-8")
+
+    def font_file(self, values):
+        _, assets = web_fonts(self.repo, lambda name: name)
+        data = assets.get(values.get("name", ""))
+        if data is None:
+            self.send_error(404)
+        else:
+            self.send_content(data, content_type="font/ttf")
+
     def article(self, values):
         path = self.path_from(values)
         editions = [
@@ -479,6 +532,7 @@ class Handler(BaseHTTPRequestHandler):
 <a class="button secondary" href="{esc(article_url(path, "edit"))}">Edit</a>
 <a class="button" href="{esc(article_url(path, "publish"))}">Publish</a>{"".join(editions)}</div>
 {branded_article(self.repo, path)}''',
+            publication=True,
         )
 
     def edit_form(self, values):
@@ -644,6 +698,7 @@ class Handler(BaseHTTPRequestHandler):
 {pdf_link}<button id="print">Print or save as PDF</button></div>
 <p class="muted no-print">Choose Save as PDF in the print dialog. For best results, use a current Chromium browser and turn off its built-in headers and footers.</p>
 {branded_article(self.repo, path)}''',
+            publication=True,
         )
 
 
@@ -969,7 +1024,16 @@ def main():
             ("127.0.0.1", args.port), partial(Handler, repo, secrets.token_hex(32))
         ) as server:
             server.write_lock = threading.Lock()
+            server.update_lock = threading.Lock()
             stop = threading.Event()
+
+            def update_worker():
+                while not stop.is_set():
+                    with server.update_lock:
+                        if getattr(server, "restart_required", False):
+                            return
+                        server.update_available = update_available()
+                    stop.wait(15 * 60)
 
             def backup_worker():
                 while not stop.is_set():
@@ -993,6 +1057,7 @@ def main():
             )
             if worker:
                 worker.start()
+            threading.Thread(target=update_worker, daemon=True).start()
             try:
                 server.serve_forever()
             finally:

@@ -238,6 +238,17 @@ def copy_site(repo, name, output):
         )
     folder, manifest = load_release(target, current)
     files = ["index.html", "style.css", "manifest.json"]
+    for name in manifest.get("font_assets", []):
+        if name != "fonts.css" and (
+            not isinstance(name, str)
+            or not name.startswith("fonts/")
+            or name.count("/") != 1
+            or "\\" in name
+            or ":" in name
+            or Path(name).suffix.lower() not in (".ttf", ".txt")
+        ):
+            raise ValueError("Invalid site font asset path.")
+        files.append(name)
     for edition in manifest["editions"]:
         article_id, language = edition["id"], edition["language"]
         repo.article_path(article_id, language)

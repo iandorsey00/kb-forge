@@ -4,6 +4,7 @@ import json
 from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile
 
 from .pdf import IMAGE_SUFFIXES, theme_asset
+from .fonts import FONT_SUFFIXES, font_notices, font_settings
 from .repository import read_mapping, write_json
 
 SECTIONS = ("workspace", "branding", "publishing")
@@ -16,6 +17,7 @@ ASSETS = {
         "header_image": IMAGE_SUFFIXES,
         "footer_image": IMAGE_SUFFIXES,
         "font": {".ttf", ".ttc"},
+        "code_font": {".ttf"},
     },
 }
 MAX_BYTES = 64 * 1024 * 1024
@@ -42,6 +44,12 @@ def asset_names(settings):
             ):
                 raise ValueError(f"Invalid theme asset filename for {section}.{field}.")
             names.add(name)
+    publishing = settings.get("publishing", {})
+    primary, fallbacks, _ = font_settings(publishing)
+    names.update(primary.values())
+    for family in fallbacks.values():
+        names.update(family.values())
+    names.update(font_notices(publishing))
     return names
 
 
@@ -53,7 +61,7 @@ def export_theme(repo, destination):
         {"version": 1, "settings": settings}, ensure_ascii=False, indent=2
     )
     paths = [
-        theme_asset(repo, name, IMAGE_SUFFIXES | {".ttf", ".ttc"})
+        theme_asset(repo, name, IMAGE_SUFFIXES | FONT_SUFFIXES | {".txt"})
         for name in sorted(names)
     ]
     if sum(path.stat().st_size for path in paths) + len(manifest.encode()) > MAX_BYTES:

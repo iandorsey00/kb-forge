@@ -1,12 +1,6 @@
 """Render the portable page theme with ReportLab and pypdf."""
 
-from hashlib import sha256
 from io import BytesIO
-import os
-from pathlib import Path
-import re
-from threading import Lock
-from xml.sax.saxutils import escape
 
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
@@ -16,7 +10,6 @@ from reportlab.lib.pagesizes import A4, LETTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
@@ -30,54 +23,12 @@ from reportlab.platypus import (
 )
 from reportlab.platypus.tableofcontents import TableOfContents
 
+from .pdf_fonts import DocumentFonts
 from .repository import article_author
 
-FONT_LOCK = Lock()
 INK = HexColor("#202020")
 MUTED = HexColor("#555555")
 QUOTE = HexColor("#edf1f5")
-
-
-def document_fonts(theme, text):
-    """Select fonts with the needed glyphs and register embedded fonts once per process."""
-    configured = theme.get("font") or os.environ.get("KBFORGE_PDF_FONT")
-    if not configured and not re.search(r"[\u2e80-\u9fff]", text):
-        return "Helvetica", "Helvetica-Bold"
-    candidates = (
-        (Path(configured),)
-        if configured
-        else (
-            Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
-            Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/msyh.ttc",
-            Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
-        )
-    )
-    path = next((item for item in candidates if item.is_file()), None)
-    if path is None:
-        raise ValueError(
-            "For Chinese PDF text, set publishing.font or KBFORGE_PDF_FONT to a CJK TrueType font."
-        )
-    try:
-        font_data = path.read_bytes()
-        name = "KBForge-" + sha256(font_data).hexdigest()[:24]
-        with FONT_LOCK:
-            if name not in pdfmetrics.getRegisteredFontNames():
-                pdfmetrics.registerFont(
-                    TTFont(name, BytesIO(font_data), asciiReadable=True)
-                )
-        font = pdfmetrics.getFont(name)
-    except Exception as error:
-        raise ValueError(f"Cannot load the PDF TrueType font: {path.name}") from error
-    missing = {
-        char
-        for char in text
-        if ord(char) > 127 and ord(char) not in font.face.charToGlyph
-    }
-    if missing:
-        raise ValueError(
-            f"The PDF font lacks glyphs for: {''.join(sorted(missing)[:12])}"
-        )
-    return name, name
 
 
 class Publication(BaseDocTemplate):
@@ -92,20 +43,32 @@ class Publication(BaseDocTemplate):
         self.margin = width * 0.1
         self.measure = width - 2 * self.margin
         self.unit = width / 419.5
-        self.font, bold = fonts
+        self.fonts = fonts
+        body_weight, heading_weight, caption_weight = (
+            fonts.weights[key] for key in ("body", "heading", "caption")
+        )
+        self.font = fonts.primary_face(body_weight)
         self.styles = {}
         body_size = theme.get("body_font_size", 11) / self.unit
-        for key, f, font_size, leading, before, after in (
-            ("title", bold, 21, 26, 0, 14),
-            ("section", bold, max(12, body_size + 2.5), max(15, body_size + 5), 9, 5),
-            ("step", bold, body_size + 1, body_size * 1.35, 7, 4),
-            ("body", self.font, body_size, body_size * 1.38, 0, 5),
-            ("caption", self.font, 8, 11, 3, 7),
-            ("code", self.font, 9, 12, 0, 7),
+        for key, weight, font_size, leading, before, after in (
+            ("title", heading_weight, 21, 26, 0, 14),
+            (
+                "section",
+                heading_weight,
+                max(12, body_size + 2.5),
+                max(15, body_size + 5),
+                9,
+                5,
+            ),
+            ("step", heading_weight, body_size + 1, body_size * 1.35, 7, 4),
+            ("body", body_weight, body_size, body_size * 1.38, 0, 5),
+            ("caption", caption_weight, 8, 11, 3, 7),
+            ("code", body_weight, 9, 12, 0, 7),
         ):
             self.styles[key] = ParagraphStyle(
                 key,
-                fontName=f,
+                fontName=fonts.primary_face(weight),
+                fontWeight=weight,
                 fontSize=font_size * self.unit,
                 leading=leading * self.unit,
                 spaceBefore=before * self.unit,
@@ -180,7 +143,7 @@ class Publication(BaseDocTemplate):
                     align
                 ],
             )
-            paragraph = Paragraph(escape(text).replace("\n", "<br/>"), style)
+            paragraph = Paragraph(self.fonts.markup(text, style.fontWeight), style)
             _, text_height = paragraph.wrap(width, height)
             if text_height > height + 0.01:
                 raise ValueError(
@@ -214,7 +177,10 @@ class Publication(BaseDocTemplate):
         canvas.setFont(self.font, 8 * unit)
         article_id = str(self.metadata["id"])
         if doc.page == 1:
-            title = Paragraph(escape(str(self.metadata["title"])), self.styles["title"])
+            style = self.styles["title"]
+            title = Paragraph(
+                self.fonts.markup(str(self.metadata["title"]), style.fontWeight), style
+            )
             _, title_height = title.wrap(self.measure, height)
             top = height * 0.86 - title_height
             title.drawOn(canvas, margin, top)
@@ -235,13 +201,27 @@ class Publication(BaseDocTemplate):
         canvas.setLineWidth(0.45)
         for position in (height * 0.914, height * 0.084):
             canvas.line(margin, position, width - margin, position)
-        canvas.drawString(
+        self.draw_label(
+            canvas,
             margin,
             height * 0.064,
             ("修订版 " if self.chinese else "Revision ") + detail,
         )
         page = f"第 {doc.page} 页" if self.chinese else f"Page {doc.page}"
-        canvas.drawRightString(width - margin, height * 0.064, page)
+        self.draw_label(canvas, width - margin, height * 0.064, page, right=True)
+
+    def draw_label(self, canvas, x, y, text, *, right=False):
+        size = 8 * self.unit
+        segments = [
+            (font, part, pdfmetrics.stringWidth(part, font, size))
+            for font, part in self.fonts.segments(text, self.fonts.weights["body"])
+        ]
+        if right:
+            x -= sum(width for _, _, width in segments)
+        for font, part, width in segments:
+            canvas.setFont(font, size)
+            canvas.drawString(x, y, part)
+            x += width
 
     def afterFlowable(self, flowable):
         # Record the heading destination after pagination gives it a page number.
@@ -251,7 +231,15 @@ class Publication(BaseDocTemplate):
             self.canv.bookmarkHorizontalAbsolute(
                 destination, self.frame._y + flowable.height
             )
-            self.notify("TOCEntry", (level, escape(title), self.page, destination))
+            self.notify(
+                "TOCEntry",
+                (
+                    level,
+                    self.fonts.markup(title, self.fonts.weights["body"]),
+                    self.page,
+                    destination,
+                ),
+            )
 
 
 class ArticleImage(Image):
@@ -288,7 +276,10 @@ def article_table(doc, block, width):
     ]
     return LongTable(
         [
-            [Paragraph(escape(cell), style) for cell, style in zip(row, styles)]
+            [
+                Paragraph(doc.fonts.markup(cell, style.fontWeight), style)
+                for cell, style in zip(row, styles)
+            ]
             for row in block["rows"]
         ],
         colWidths=[width / columns] * columns,
@@ -345,7 +336,9 @@ def make_story(doc, blocks, depth):
                 caption = ParagraphStyle(
                     "image-caption", parent=doc.styles["caption"], leftIndent=inset
                 )
-                flow.append(Paragraph(escape(text), caption))
+                flow.append(
+                    Paragraph(doc.fonts.markup(text, caption.fontWeight), caption)
+                )
             continue
         level = block.get("level", 0)
         key = (
@@ -371,9 +364,45 @@ def make_story(doc, blocks, depth):
                 style.spaceBefore = max(style.spaceBefore, padding)
                 style.spaceAfter = max(style.spaceAfter, padding)
         if kind == "code":
-            node = XPreformatted(escape(text), style)
+            inset = 7 * doc.unit
+            style = ParagraphStyle(
+                "code-block",
+                parent=style,
+                fontName=doc.fonts.code_face(),
+                leftIndent=style.leftIndent + inset,
+                rightIndent=inset,
+                backColor=QUOTE,
+                borderColor=HexColor("#cbd5df"),
+                borderWidth=0.5,
+                borderPadding=(3, inset, 3, inset),
+                spaceBefore=6 * doc.unit,
+            )
+            width = doc.measure - style.leftIndent - style.rightIndent
+            lines = []
+            for original in text.expandtabs(4).split("\n"):
+                line, used = [], 0
+                for char in original:
+                    font = doc.fonts.match(char, 400, False, code=True)
+                    size = pdfmetrics.stringWidth(char, font, style.fontSize)
+                    if line and used + size > width:
+                        lines.append("".join(line))
+                        line, used = [], 0
+                    line.append(char)
+                    used += size
+                lines.append("".join(line))
+            markup = "\n".join(doc.fonts.markup(line, 400, code=True) for line in lines)
+            node = XPreformatted(markup, style)
         else:
-            node = Paragraph(escape(text), style, bulletText=marker)
+            runs = block.get("runs", [(text, False, False)])
+            markup = "".join(
+                doc.fonts.markup(
+                    part,
+                    max(700, style.fontWeight) if bold else style.fontWeight,
+                    italic,
+                )
+                for part, bold, italic in runs
+            )
+            node = Paragraph(markup, style, bulletText=marker)
         if 0 < level <= depth:
             node.toc_entry = (max(0, level - 2), f"section-{index}", text)
         flow.append(node)
@@ -396,14 +425,10 @@ def cover_text(metadata, theme, box):
 
 def render_pdf(metadata, theme, blocks):
     chinese = str(metadata.get("language", "")).lower().startswith("zh")
-    text = str(metadata["title"]) + "".join(block["text"] for block in blocks)
-    text += "".join(
-        cover_text(metadata, theme, box) for box in theme.get("cover_layout") or []
-    )
     author = article_author(metadata)
     label = "作者：" if chinese else "Author: "
     byline = label + author if author else ""
-    fonts = document_fonts(theme, text + byline + ("目录修订版第页" if chinese else ""))
+    fonts = DocumentFonts(theme, str(metadata.get("language", "")))
     cover = None
     size = LETTER if theme["paper"] == "Letter" else A4
     if theme.get("cover_pdf"):
@@ -431,7 +456,7 @@ def render_pdf(metadata, theme, blocks):
         toc.levelStyles = [
             ParagraphStyle(
                 f"toc-{level}",
-                fontName=fonts[0],
+                fontName=fonts.primary_face(fonts.weights["body"]),
                 fontSize=11 * doc.unit,
                 leading=16 * doc.unit,
                 leftIndent=level * 9 * doc.unit,
@@ -444,7 +469,11 @@ def render_pdf(metadata, theme, blocks):
         story.extend(
             [
                 Paragraph(
-                    "目录" if chinese else "Table of Contents", doc.styles["title"]
+                    fonts.markup(
+                        "目录" if chinese else "Table of Contents",
+                        fonts.weights["heading"],
+                    ),
+                    doc.styles["title"],
                 ),
                 toc,
                 PageBreak(),
@@ -458,7 +487,7 @@ def render_pdf(metadata, theme, blocks):
         )
     ):
         style = ParagraphStyle("byline", parent=doc.styles["body"], keepWithNext=True)
-        story.append(Paragraph(escape(byline), style))
+        story.append(Paragraph(fonts.markup(byline, style.fontWeight), style))
     story.extend(flow or [Spacer(1, 1)])
     # Reflow until the contents entries and page numbers agree.
     doc.multiBuild(story)

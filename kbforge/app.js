@@ -1,5 +1,26 @@
 document.querySelector("#print")?.addEventListener("click", () => window.print());
 
+const updatesLink = document.querySelector("#updates-link");
+if (updatesLink) {
+    async function refreshUpdateLabel() {
+        if (document.hidden) return;
+        try {
+            const response = await fetch("/update-status");
+            if (!response.ok) return;
+            const label = await response.text();
+            if (updatesLink.textContent !== label) {
+                updatesLink.textContent = label;
+                updatesLink.classList.toggle("update-available", label === "Update app…");
+            }
+        } catch {
+            // Navigation stays available if a status request fails.
+        }
+    }
+    refreshUpdateLabel();
+    window.setInterval(refreshUpdateLabel, 30_000);
+    document.addEventListener("visibilitychange", refreshUpdateLabel);
+}
+
 const upload = document.querySelector("#image-upload");
 if (upload) {
     const input = upload.querySelector("#image-file");

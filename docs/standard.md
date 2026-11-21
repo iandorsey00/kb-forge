@@ -14,7 +14,7 @@ This specification defines a collection that can be edited and read using ordina
 | `articles/<id>/assets/` | Shared images for the language editions of one article |
 | `branding/` | Optional branding image referenced by configuration |
 
-Use UTF-8. Configuration, the registry, and front matter use JSON object syntax, which is valid YAML 1.2. The MVP accepts this subset. Keep the two front matter delimiters as standalone `---` lines. The body uses GitHub-flavored Markdown, including headings, lists, tables, code, and relative links. The branded viewer strips raw HTML and renders supported local images. See [a complete English article](../example/articles/FIELD-000001/en-US.md) and [its Chinese edition](../example/articles/FIELD-000001/zh-CN.md).
+Use UTF-8. Configuration, the registry, and front matter use JSON object syntax, which is valid YAML 1.2. KB Forge accepts this subset. Keep the two front matter delimiters as standalone `---` lines. The body uses GitHub-flavored Markdown, including headings, lists, tables, code, and relative links. The branded viewer strips raw HTML and renders supported local images. See [a complete English article](../example/articles/FIELD-000001/en-US.md) and [its Chinese edition](../example/articles/FIELD-000001/zh-CN.md).
 
 ## Article metadata
 
@@ -90,9 +90,44 @@ The HTML view displays the collection artwork and an HTML title block. To see an
 
 ### Workspace branding and fonts
 
-The optional `workspace` object controls the KB Forge interface. Set `name`, an optional `logo` filename under `branding/`, and `accent`, `navigation`, and `background` as six-digit hex colors. The accent color sets primary button backgrounds, secondary button outlines and text, and links. Use dark accent and navigation colors for white labels and a light background for dark text. The existing `branding` and `publishing` settings continue to control articles.
+The optional `workspace` object controls the KB Forge interface and the exported site's outer layout. Set `name`, an optional `logo` filename under `branding/`, and `accent`, `navigation`, and `background` as six-digit hex colors. Exported homepages and article navigation use the workspace name and logo when set, with the collection name and logo as defaults. The colors carry through to site links, the homepage header, and the page background. Use dark accent and navigation colors for white labels and a light background for dark text. The `branding` and `publishing` settings control the article itself, including PDF artwork.
 
-Use `publishing.font` to name a TrueType font file (`.ttf` or `.ttc`) under `branding/`, or set the local `KBFORGE_PDF_FONT` environment variable to an absolute path. KB Forge embeds the glyphs it uses. For Chinese documents it also tries Arial Unicode on macOS, Microsoft YaHei on Windows, and WenQuanYi Zen Hei on Linux. If those are unavailable, configure a CJK TrueType font with the required glyphs.
+### Publication fonts
+
+Place TrueType font files under the collection's `branding/` directory. The example collection includes optional, unmodified font files with their SIL Open Font License notices. Copy the fonts and notices you plan to use:
+
+- Inter Variable 4.1 upright and italic for document text. [License](../example/branding/Inter-OFL.txt)
+- Noto Sans CJK SC 2.004 for Simplified Chinese coverage. This regional build is about 17 MiB. [Upstream](https://github.com/notofonts/noto-cjk/tree/Sans2.004) · [License](../example/branding/NotoSansCJK-OFL.txt)
+- Source Code Pro 2.042 Regular for monospace text. [Upstream](https://github.com/adobe-fonts/source-code-pro/releases) · [License](../example/branding/SourceCodePro-OFL.txt)
+
+Add the settings you need to `kbforge.yaml`. This example uses all three families:
+
+```json
+{
+  "publishing": {
+    "fonts": {
+      "regular": "InterVariable.ttf",
+      "italic": "InterVariable-Italic.ttf"
+    },
+    "font_fallbacks": {"zh-CN": "NotoSansSC-VF.ttf"},
+    "code_font": "SourceCodePro-Regular.ttf",
+    "font_weights": {
+      "body": 400,
+      "heading": 600,
+      "caption": 400
+    },
+    "font_licenses": ["Inter-OFL.txt", "NotoSansCJK-OFL.txt", "SourceCodePro-OFL.txt"]
+  }
+}
+```
+
+- `fonts.regular` is required when defining a family. For static families, optionally provide separate `bold`, `italic`, and `bold_italic` filenames. For a variable family, the upright and italic files can supply their respective weights. An upright file with an `ital` or `slnt` axis can supply a slanted face when a separate italic file is absent.
+- `font_weights` is optional. Defaults are 400 for body and captions, and 700 for headings. Each accepts an integer from 1 to 1000. Markdown strong emphasis requests at least 700, emphasis requests italic, and nested emphasis combines them. Variable faces use the requested weight within the supported `wght` range. PDFs pin other axes at their defaults, except `ital` and `slnt` when selecting style. Static PDF families choose the closest configured weight in the requested style, then use upright if no italic face is available.
+- `font_fallbacks` maps a language tag or `default` to a filename or another family object. KB Forge tries the primary face first, then matching language fallbacks, the default, and other configured fallbacks. The PDF renderer can also try a system CJK font for missing Chinese glyphs. It reports the missing character when coverage is still insufficient.
+- `code_font` is optional and accepts a TrueType `.ttf` filename. It sets the font for fenced PDF code and for inline and fenced code in HTML. PDF code defaults to Courier and uses the publication family or its fallbacks for additional glyphs.
+- The interactive viewer and exported HTML use local TrueType `.ttf` files with CSS weight ranges. Exported sites include referenced font assets and license notices for offline use. PDFs use FontTools to instantiate variable TrueType faces in memory and embed the glyphs they use. TrueType-outline collections (`.ttc`, first face) are supported in PDF. CFF and CFF2 OpenType outlines are unsupported by this font pipeline.
+- `publishing.font` remains supported as a single face. PDF precedence is `publishing.fonts`, then `publishing.font`, then the absolute path in `KBFORGE_PDF_FONT`, then the built-in fonts. The environment setting applies only to PDFs. Existing collections require no configuration migration.
+- Theme bundles preserve referenced font files, notices, and settings. Confirm redistribution rights before sharing custom fonts and list any accompanying copyright or license files by filename in `font_licenses`. [Inter upstream releases](https://github.com/rsms/inter/releases) · [SIL Open Font License FAQ](https://openfontlicense.org/ofl-faq/)
 
 ### Custom PDF cover layout
 

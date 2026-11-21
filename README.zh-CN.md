@@ -2,25 +2,25 @@
 
 [English](README.md) · 简体中文
 
-KB Forge 是一套规划中的工具，用于创建、组织、校验和发布可迁移的知识库。文章采用 Markdown 编写，元数据保存在文件开头的 YAML 区块中，图片和附件以普通文件保存。即使组织日后更换 KB Forge，也应能使用常见工具阅读和维护原有知识库。
+KB Forge 是一套工具，用于创建、组织、校验和发布可迁移的知识库。文章采用 Markdown 编写，元数据保存在文件开头的 YAML 区块中，图片和附件以普通文件保存。即使组织日后更换 KB Forge，也应能使用常见工具阅读和维护原有知识库。
 
 ![KB Forge 显示虚构示例知识库 Northshore Field Services 中带有品牌样式的故障排查文章](docs/images/kb-forge-example.png)
 
 ## 文档
 
-最小可用版本（MVP）及每次改变文档所述操作流程的发布，都必须提供完整的英文和简体中文（`zh-CN`）文档。两个版本应便于查找，并提供相互跳转的链接。产品行为、配置或文档标准发生变化时，应在同一次变更中更新两个版本。
+每次改变文档所述操作流程的发布，都必须提供完整的英文和简体中文（`zh-CN`）文档。两个版本应便于查找，并提供相互跳转的链接。产品行为、配置或文档标准发生变化时，应在同一次变更中更新两个版本。
 
 文档应包括以下内容：
 
 - **文档标准。** 提供独立成章、具有版本号的规范，说明目录结构、元数据字段及允许值、永久文档编号和组织自定义前缀、资源文件的命名和存放位置、相对链接、文章之间的关系、译文管理、地区适用范围以及文章的生命周期。明确必遵规则、可配置的默认值和示例，并提供一篇附带资源文件的完整文章，供读者用 Markdown 编辑器查看。
-- **快速入门与文章编写。** 说明如何安装和配置工具，并通过实例演示创建文章、添加图片、按元数据查找文章、修复校验发现的问题、预览带品牌样式的文章以及导出 PDF。
+- **快速入门与文章编写。** 说明如何安装和配置工具，并通过实例演示创建文章、添加图片、按正文和元数据查找文章、修复校验发现的问题、预览带品牌样式的文章以及导出 PDF。
 - **配置与维护。** 提供编号、元数据、模板、校验规则和品牌样式的配置示例。说明如何复审文章、更新译文、处理常见校验问题，以及如何使用常见工具继续使用和维护知识库。
 
 两个版本应使用相同的命令、YAML 字段名和标识符。说明文字、标题、图注等面向读者的内容应提供对应译文。发布前，按两个语言版本的指引分别走完操作流程，检查示例文件和链接，并确认中文示例在 HTML 和 PDF 中均能清晰显示。
 
 上述双语要求适用于 KB Forge 自身的文档和演示。各组织可以自行决定知识库支持哪些语言，单篇文章可以只提供一个语言版本。
 
-## 运行最小可用版本
+## 快速入门
 
 安装 Python 3.11 或更高版本，以及支持 GFM `attributes` 扩展的新版 Pandoc（可运行 `pandoc --list-extensions=gfm` 确认）。确保终端可以运行这两个程序。工作区无需云端账户或额外的 Python 软件包。分页 PDF 渲染器使用可选依赖。
 
@@ -58,7 +58,7 @@ python3 -m pip install -r requirements-pdf.txt
 python3 -m kbforge demo-work --export-pdf FIELD-000002 en-US --output article.pdf
 ```
 
-也可以在 **Publish → Open branded PDF** 中查看结果。有关封面、品牌图片和中文字体，请参阅[发布设置](docs/standard.zh-CN.md#品牌样式与发布)。分页导出支持标题、段落、列表、代码块、本地图片及使用竖线编写的 Markdown 表格。表格单元格以纯文本呈现，图片以替代文字显示。通过浏览器打印可以保留丰富的行内样式。
+也可以在 **Publish → Open branded PDF** 中查看结果。有关封面、品牌图片和中文字体，请参阅[发布设置](docs/standard.zh-CN.md#品牌样式与发布)。分页导出支持标题、段落、列表、代码块、本地图片及使用竖线编写的 Markdown 表格。围栏代码块（包括标记为 `text` 的代码块）保留空白并带有底色，ASCII 文本采用等宽字体。表格单元格以纯文本呈现，图片以替代文字显示。通过浏览器打印可以保留丰富的行内样式。
 
 ### 将主题迁移到另一个知识库
 
@@ -101,6 +101,8 @@ python3 -m kbforge ../collections --backup-all-collections --output ../collectio
 python3 -m kbforge --update
 ```
 
+应用会在启动时和之后每隔 15 分钟检查已配置的上游分支，并刷新 Git 跟踪信息。有可快进应用的更新时，导航栏中的 **Updates** 会变为 **Update app…**，仍打开同一个确认页面。选择 **Check and install update** 后才会安装更新。
+
 KB Forge 会获取当前分支所跟踪的远程分支，并仅通过快进方式更新。Git 会阻止覆盖冲突的本地文件。如果受 Git 跟踪的修改阻止更新，可用 `git status --short` 查看。如果存在仅本地拥有的提交，请通过 Git 处理。更新功能跟踪上游分支，与发布标签相互独立。通过界面更新后，按 **Ctrl+C** 停止服务，再重新启动。如果可选的 PDF 依赖有变更，请重新执行上文的安装命令。
 
 如果通过 ZIP 安装，请将[新版程序](https://github.com/iandorsey00/kb-forge/releases)解压到与旧版并列的新目录，并在启动时传入现有知识库路径。建议将知识库放在应用目录之外，以便单独替换软件。请先备份知识库，并确认新版可以打开，再移除旧版。
@@ -114,7 +116,20 @@ python3 -m kbforge work-collection --init --name "技术支持知识库" --prefi
 python3 -m kbforge work-collection
 ```
 
-该命令创建最小配置、空编号登记表、空文章目录和通用文章模板。使用 `--language` 设置首选语言，默认值为 `en-US)。之后可导入主题 ZIP 以应用品牌样式。在 Windows PowerShell 中，可使用 `py` 代替 `python3`。
+该命令创建最小配置、空编号登记表、空文章目录和通用文章模板。使用 `--language` 设置首选语言，默认值为 `en-US`。之后可导入主题 ZIP 以应用品牌样式。在 Windows PowerShell 中，可使用 `py` 代替 `python3`。
+
+### 重命名知识库
+
+保存编辑并停止 KB Forge。重命名知识库目录，例如将 `support-kb` 改为 `support-kb-prerelease`，然后使用新路径打开：
+
+```sh
+python3 -m kbforge "/path/to/support-kb-prerelease"
+```
+
+文章编号、内部链接和品牌样式会保留。请更新引用旧路径的快捷方式、启动命令或定时备份任务。如果还将知识库移到了另一个父目录，请检查 `kbforge.yaml` 中的相对备份路径和相对发布路径。定时备份按知识库路径归组，因此重命名后会开始新的备份系列。已有的 ZIP 仍可用于恢复。
+
+如需更改应用及导出站点导航中显示的工作区名称，请在 `kbforge.yaml` 中设置 `workspace.name`，然后重启 KB Forge 并重新生成站点。如需更改已发布文章中显示的组织名称，请设置 `branding.name` 并重新生成发布文件。
+
 
 ### 批量处理图片
 
@@ -128,9 +143,9 @@ python3 -m kbforge work-collection
 python3 -m kbforge work-collection --export-site --output published-site
 ```
 
-请先安装上文的 PDF 依赖，并使用新目录。结果包括索引页、共享样式表、记录文章编号、语言、修订号及相对输出路径的 `manifest.json`，以及每个已发布语言版本的品牌 HTML 页面和 PDF。以输出目录为基准，每个语言版本的文件并排保存在 `articles/<id>/<language>.html` 和 `articles/<id>/<language>.pdf`。首页为根目录下的 `index.html`，首页和各文章页均提供对应 PDF 的下载链接。图片嵌入 HTML 页面，站内链接使用相对路径。可在本地打开 `index.html`，也可将整个输出目录部署到静态网站主机。
+请先安装上文的 PDF 依赖，并使用新目录。结果包括索引页、共享样式表、记录文章编号、语言、修订号及相对输出路径的 `manifest.json`，以及每个已发布语言版本的品牌 HTML 页面和 PDF。以输出目录为基准，每个语言版本的文件并排保存在 `articles/<id>/<language>.html` 和 `articles/<id>/<language>.pdf`。首页为根目录下的 `index.html`，首页和各文章页均提供对应 PDF 的下载链接。首页可搜索已发布文章的正文、标题、编号和标签，无需服务器或网络连接。KB Forge 工作区的导航栏和目录页可以搜索正文和元数据，包括草稿。图片嵌入 HTML 页面，站内链接使用相对路径。可在本地打开 `index.html`，也可将整个输出目录部署到静态网站主机。
 
-如果 PDF 生成失败，导出会报告文章编号和语言，并删除未完成的输出。中文 PDF 需要包含所需汉字的字体。使用 `--export-site --html-only` 可省略 PDF 及其链接。此模式无需安装 PDF 依赖。
+如果 PDF 生成失败，导出会报告文章编号和语言，并删除未完成的输出。中文 PDF 需要包含所需汉字的字体。使用 `--export-site --html-only` 可省略 PDF 及其链接。仅导出 HTML 时，自定义网页字体需使用 FontTools，无需安装 ReportLab 或 pypdf。
 
 ### 发布和回滚站点
 
@@ -213,7 +228,7 @@ python3 -m kbforge --clone-site "/path/to/OneDrive/team-kb" --output my-editable
 }
 ```
 
-KB Forge 启动时会检查一次，运行期间每分钟检查一次。首次运行会创建并校验 ZIP，之后在距上次备份达到指定小时数时创建新备份。每个 ZIP 都会保留。应用关闭时，可使用 cron、Windows 任务计划程序或其他系统调度工具，在 KB Forge 项目目录中运行以下命令。配置任务时请填写 Python 解释器和知识库的绝对路径。
+KB Forge 启动时会检查一次，运行期间每分钟检查一次。首次运行会创建并校验 ZIP，之后在距上次备份达到指定小时数时创建新备份。每个 ZIP 都会保留。应用关闭时，请参阅 [Windows 任务计划程序、macOS launchd 或 Linux cron 的配置方法](docs/scheduled-backups.zh-CN.md)。计划任务会在 KB Forge 项目目录中运行以下命令。
 
 ```sh
 python3 -m kbforge work-collection --run-scheduled-backup
@@ -223,7 +238,7 @@ python3 -m kbforge work-collection --run-scheduled-backup
 
 ### 管理字体、编号与版本
 
-如需统一拉丁字母 PDF 字体，可将 Inter 等静态 TrueType 字体放入 `branding/`，并在 `publishing.font` 中填写文件名。中文版需要包含中文字形的字体。修改字体后，从 Markdown 重新导出以更新分页。导入的 PDF 封面保留原有字体。
+可通过[静态或可变字体族](docs/standard.zh-CN.md#发布字体)统一文章查看器、导出站点和 PDF 的字体。示例包含 Inter Variable、用于简体中文的 Noto Sans CJK SC、用于代码的 Source Code Pro，以及各自的 SIL 开放字体许可证。安装上文所述的发布依赖后，即可检查字体并在 PDF 中嵌入字形。修改字体后，从 Markdown 重新导出以更新分页。导入的 PDF 封面保留原有字体。
 
 知识库移交后，已有文章应保留原编号。采用正式编号规则后，可为新文章使用新前缀。如果现有文章必须重新编号，请保留新旧编号对照表，并在元数据中保存原编号。更新引用，然后重新生成受影响的导出文件。
 

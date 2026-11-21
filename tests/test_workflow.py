@@ -77,7 +77,15 @@ class WorkflowTest(unittest.TestCase):
                 "POST", path, urlencode({"_token": "test-token", **data}).encode()
             )
 
+        self.assertEqual(get("/update-status"), "Updates")
         self.assertIn("Create draft", get("/create"))
+        server.update_available = True
+        self.assertEqual(get("/update-status"), "Update app…")
+        updates = get("/updates")
+        self.assertEqual(updates.count('href="/updates"'), 1)
+        self.assertIn('class="update-available">Update app…</a>', updates)
+        self.assertIn("Check and install update", updates)
+        server.update_available = False
         editor = post(
             "/create",
             title="New field procedure",
@@ -114,6 +122,7 @@ class WorkflowTest(unittest.TestCase):
                 alt="Example screen",
             )
         self.assertIn("New field procedure", get("/catalog?q=field-test"))
+        self.assertIn("New field procedure", get("/catalog?q=show+a+table"))
         self.assertNotIn("New field procedure", get("/catalog?q=unmatched"))
         published = get("/publish" + query)
         self.assertIn("Northshore Field Services", published)
@@ -144,6 +153,9 @@ class WorkflowTest(unittest.TestCase):
         chinese = get("/publish?id=FIELD-000001&language=zh-CN")
         self.assertIn("处理会议室显示屏无信号的问题", chinese)
         self.assertRegex(chinese, re.compile(r'lang="zh-CN".*?修订版', re.S))
+        server.restart_required = True
+        self.assertEqual(get("/update-status"), "Restart app")
+        self.assertIn("Restart required", get("/updates"))
 
     def test_registry_preserves_reserved_ids(self):
         self.assertEqual(self.repo.reserve_id(), "FIELD-000005")
@@ -175,14 +187,31 @@ class WorkflowTest(unittest.TestCase):
             initialize_collection(location, "Replacement", "NEW", 5, "en-US")
 
         destination = self.root.parent / "site"
+        self.repo.config["workspace"] = {
+            "name": "Support Workspace",
+            "logo": "northshore-mark.png",
+            "accent": "#1a4c49",
+            "navigation": "#193142",
+            "background": "#f7f9fa",
+        }
         export_html(self.repo, destination, include_pdfs=False)
         index = (destination / "index.html").read_text(encoding="utf-8")
+        self.assertIn("<h1>Support Workspace</h1>", index)
+        self.assertIn("--workspace-accent:#1a4c49", index)
+        self.assertIn("--workspace-navigation:#193142", index)
+        self.assertIn("--workspace-background:#f7f9fa", index)
+        self.assertIn('<img src="data:image/png;base64,', index)
         self.assertIn('href="articles/FIELD-000001/zh-CN.html"', index)
+        self.assertIn('id="reader-search"', index)
+        self.assertIn("Confirm the input number", index)
+        self.assertNotIn("FIELD-000004", index)
         page = (destination / "articles/FIELD-000001/en-US.html").read_text(
             encoding="utf-8"
         )
         self.assertIn('href="../FIELD-000002/en-US.html"', page)
         self.assertIn('href="../../index.html"', page)
+        self.assertIn("Support Workspace", page)
+        self.assertIn("Northshore Field Services", page)
         self.assertIn('href="../../style.css"', page)
         self.assertIn("data:image/png;base64,", page)
         self.assertNotIn('href="/article?', page)
