@@ -31,7 +31,7 @@ class PublishingTest(unittest.TestCase):
             self.assertNotIn("•", text)
             self.assertIn("Symbols: ☐ ☑ ☒ ✓", text)
 
-    def test_sized_list_image_and_shaded_quote(self):
+    def test_sized_list_image_and_distinct_quote_and_code_fills(self):
         from pypdf import PdfReader
 
         with TemporaryDirectory() as directory:
@@ -44,7 +44,8 @@ class PublishingTest(unittest.TestCase):
                 "## Steps\n\n"
                 "1. List text\n\n"
                 "   ![Selector](assets/input-selector.png){width=40%}\n\n"
-                "> Quoted text\n"
+                "> Quoted text\n\n"
+                "```text\n  Preformatted text\n```\n"
             )
             save_article(article, meta, body)
             pdf = PdfReader(BytesIO(export_pdf(repo, article)))
@@ -70,7 +71,13 @@ class PublishingTest(unittest.TestCase):
                 body_origin["x"],
                 places=3,
             )
-            self.assertTrue(any(operator == b"re" for _, operator in operations))
+            rgb_fills = {
+                tuple(round(float(channel) * 255) for channel in operands)
+                for operands, operator in operations
+                if operator == b"rg"
+            }
+            self.assertIn((237, 241, 245), rgb_fills)
+            self.assertIn((237, 242, 239), rgb_fills)
 
             html = render_body(repo, article, body)
             self.assertIn('style="width:40.0%"', html)

@@ -1,5 +1,13 @@
 # Changelog · 更新日志
 
+## v0.8.1
+
+- Match the HTML background colors for fenced text and blockquotes in PDFs.
+
+### 简体中文
+
+- 使 PDF 中围栏文本和引用块的底色分别与 HTML 保持一致。
+
 ## v0.8.0
 
 - Group core fields on the New article screen and make additional details and custom metadata collapsible.

@@ -30,6 +30,7 @@ from .repository import article_author
 INK = HexColor("#202020")
 MUTED = HexColor("#555555")
 QUOTE = HexColor("#edf1f5")
+CODE_BACKGROUND = HexColor("#edf2ef")
 
 
 class Publication(BaseDocTemplate):
@@ -377,7 +378,7 @@ def make_story(doc, blocks, depth):
                 fontName=doc.fonts.code_face(),
                 leftIndent=style.leftIndent + inset,
                 rightIndent=inset,
-                backColor=QUOTE,
+                backColor=CODE_BACKGROUND,
                 borderColor=HexColor("#cbd5df"),
                 borderWidth=0.5,
                 borderPadding=(3, inset, 3, inset),
