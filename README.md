@@ -35,10 +35,10 @@ In Windows PowerShell, use `Copy-Item -Recurse example demo-work` and `py -m kbf
 
 ### Try the demo
 
-1. Open **New article**. Choose **Procedure**, keep **New article** as the source, enter a title and owner, and set a future review date. Enter a distinctive tag such as `demo-cable`. Select **Create draft**. On a fresh copy, the new ID is `FIELD-000005`.
+1. Open **New article**. Choose **Procedure**, keep **New article** as the source, enter a title and owner. Open **Additional details**, set a future review date, and enter a distinctive tag such as `demo-cable`. Select **Create draft**. On a fresh copy, the new ID is `FIELD-000005`.
 2. Add text under **Purpose** and **Steps**. Use **Split** to see how the Markdown renders while you write. Place the cursor on the line after which you want the picture, choose a PNG or JPEG in **Images**, describe it, and select **Insert images**. Then select **Save changes** to save the text and image reference together.
 3. In **Catalog**, search for `demo-cable`. Open the article to check the branding and image. Use **Validation** to find problems. The supplied incomplete practice draft intentionally has a missing owner, a missing section and image, and an overdue review.
-4. Select **Publish**, then **Print or save as PDF**. In Chromium, choose **Save as PDF**, turn off the browser's own headers and footers, and check the preview before saving. The print stylesheet supplies A4 margins, page numbers, and the branded title block. Try the Chinese edition of `FIELD-000001` to check the characters and screenshot. Install a Simplified Chinese system font if the print preview shows missing glyphs.
+4. Select **Publish**, then **Open branded PDF** to preview it in a new tab or **Download PDF** to save it as `<id> <title>.pdf`. Install PDF support below if the buttons are unavailable. Try the Chinese edition of `FIELD-000001` to check the characters and screenshot.
 5. In a text editor, open `demo-work/articles/FIELD-000005/en-US.md` and inspect its front matter and relative image link. Open the PNG or JPEG in the article's `assets` folder directly.
 
 Run repository validation without the browser with `python3 -m kbforge demo-work --validate`. Exit code 1 indicates errors. Run the automated tests with `python3 -m unittest discover -s tests`.
@@ -49,7 +49,7 @@ Read the [KB Forge Documentation Standard](docs/standard.md) for file layout, me
 
 Use [custom metadata fields](docs/standard.md#custom-metadata-fields) to add typed fields with optional defaults to the article editor.
 
-The workspace runs on loopback for one local operator per collection. The browser interface is in English. Use the paginated renderer below or the browser's print dialog for PDF export. See the standard for local allocation, Markdown, and import limits.
+The workspace runs on loopback for one local operator per collection. The browser interface is in English. Use the paginated renderer below for PDF export. See the standard for local allocation, Markdown, and import limits.
 
 ### Publish a paginated branded PDF
 
@@ -60,7 +60,7 @@ python3 -m pip install -r requirements-pdf.txt
 python3 -m kbforge demo-work --export-pdf FIELD-000002 en-US --output article.pdf
 ```
 
-You can also use **Publish → Open branded PDF**. See the [publishing settings](docs/standard.md#branded-publishing) for cover art, page artwork, and Chinese fonts. Paginated export supports headings, paragraphs, lists, code blocks, local images, and Markdown pipe tables. Fenced blocks, including fences labeled `text`, preserve whitespace and use a shaded box with monospace lettering for ASCII text. Table cells use plain text, with alternative text in place of images. Browser print preserves rich inline formatting.
+You can also use **Publish → Open branded PDF**. See the [publishing settings](docs/standard.md#branded-publishing) for cover art, page artwork, and Chinese fonts. Paginated export supports headings, paragraphs, lists, code blocks, local images, and Markdown pipe tables. Fenced blocks, including fences labeled `text`, preserve whitespace and use a shaded box with monospace lettering for ASCII text. Table cells use plain text, with alternative text in place of images. Print the published PDF from your PDF viewer when you need a paper copy or different printer settings.
 
 ### Move a theme to another collection
 
@@ -146,7 +146,7 @@ For images that belong to a list item, place the cursor on the line with its lis
 python3 -m kbforge work-collection --export-site --output published-site
 ```
 
-Install the PDF dependencies above and use a new output directory. The output includes an index, a shared stylesheet, a `manifest.json` listing edition IDs, languages, revisions, and relative output paths, and a branded HTML page and PDF for each published language edition. Each edition's files sit side by side at `articles/<id>/<language>.html` and `articles/<id>/<language>.pdf`, relative to the output directory. The homepage is `index.html` at the root, and both it and each article page link to the matching PDF. The homepage searches published article text, titles, IDs, and tags with no server or network connection. In the KB Forge workspace, use the navigation search box or the catalog to search article text and metadata, including drafts. Images are embedded in the HTML, and site links are relative. Open `index.html` locally or copy the entire output directory to a static web host.
+Install the PDF dependencies above and use a new output directory. The output includes an index, a shared stylesheet, a `manifest.json` listing edition IDs, languages, revisions, and relative output paths, and a branded HTML page and PDF for each published language edition. Each edition's files sit side by side at `articles/<id>/<language>.html` and `articles/<id>/<language>.pdf`, relative to the output directory. The homepage is `index.html` at the root, and both it and each article page offer a PDF download named `<id> <title>.pdf`. The homepage searches published article text, titles, IDs, and tags with no server or network connection. In the KB Forge workspace, use the navigation search box or the catalog to search article text and metadata, including drafts. Images are embedded in the HTML, and site links are relative. Open `index.html` locally or copy the entire output directory to a static web host.
 
 If PDF generation fails, the export reports the article ID and language and removes the incomplete output. Chinese PDFs require a font with the needed glyphs. Use `--export-site --html-only` to omit PDFs and their links. HTML-only exports need FontTools when using custom web fonts, and can run without ReportLab or pypdf.
 
@@ -241,7 +241,7 @@ The editor is a loopback service for one local operator. Share exported sites wi
 
 ### Manage fonts, identifiers, and releases
 
-Use a [static or variable font family](docs/standard.md#publication-fonts) for consistent typography in the article viewer, exported sites, and PDFs. The example includes Inter Variable, Noto Sans CJK SC for Simplified Chinese, and Source Code Pro for code, with their SIL Open Font License notices. Install the publishing dependencies above to enable font inspection and PDF embedding. Re-export from Markdown after changing fonts to recalculate pagination. An imported PDF cover keeps its original typography.
+Use a [static or variable font family](docs/standard.md#publication-fonts) for consistent typography in the article viewer, exported sites, and PDFs. The example includes Inter Variable, Noto Sans CJK SC for Simplified Chinese, and Source Code Pro for code, with their SIL Open Font License notices. To use a bundled example font in another collection, copy its file and license notice into that collection’s `branding/` folder and merge the relevant `publishing` settings from the standard into `kbforge.yaml`. The included Noto Sans Symbols 2 is an automatic PDF fallback and requires no collection settings. Install the publishing dependencies above to enable font inspection and PDF embedding. Re-export from Markdown after changing fonts to recalculate pagination. An imported PDF cover keeps its original typography.
 
 Keep existing IDs as ownership changes. Switch the prefix for new articles when an official numbering scheme is adopted. If existing articles must be renumbered, keep an old-to-new map and preserve each original ID in metadata. Update references and regenerate the affected exports.
 

@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from kbforge.app import Handler
 from kbforge.migrate import migrate_articles
 from kbforge.package import import_package
+from kbforge.pdf import pdf_available
 from kbforge.publishing import export_html
 from kbforge.renumber import renumber
 from kbforge.repository import (
@@ -69,7 +70,7 @@ class WorkflowTest(unittest.TestCase):
             def log_message(self, format, *args):
                 pass
 
-        def request(method, path, data=b""):
+        def request(method, path, data=b"", *, binary=False):
             raw = (
                 f"{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:8765\r\n"
                 f"Content-Length: {len(data)}\r\n"
@@ -78,7 +79,8 @@ class WorkflowTest(unittest.TestCase):
             handler = InMemoryHandler(
                 self.repo, "test-token", raw, ("127.0.0.1", 12345), server
             )
-            headers, body = handler.result.decode().split("\r\n\r\n", 1)
+            raw_headers, body = handler.result.split(b"\r\n\r\n", 1)
+            headers = raw_headers.decode()
             if headers.startswith("HTTP/1.0 303"):
                 location = next(
                     line[10:]
@@ -87,7 +89,7 @@ class WorkflowTest(unittest.TestCase):
                 )
                 return request("GET", location)
             self.assertTrue(headers.startswith("HTTP/1.0 200"), body)
-            return body
+            return (headers, body) if binary else body.decode()
 
         def get(path):
             return request("GET", path)
@@ -100,6 +102,8 @@ class WorkflowTest(unittest.TestCase):
         self.assertEqual(get("/update-status"), "Updates")
         create_form = get("/create")
         self.assertIn("Create draft", create_form)
+        self.assertIn("Additional details", create_form)
+        self.assertIn("Custom metadata", create_form)
         self.assertIn('Internal<select name="custom.internal">', create_form)
         self.assertIn('<option value="false" selected>False</option>', create_form)
         self.assertIn('name="custom.legacy_id" type="text" value="0"', create_form)
@@ -135,9 +139,14 @@ class WorkflowTest(unittest.TestCase):
         editor = get("/edit" + query)
         self.assertIn('name="custom.audience" type="text" value="Field technicians" form="article-editor"', editor)
         saved = path.read_bytes()
-        preview = post("/preview" + query, body="## Unsaved draft\n\n**Bold**")
+        preview = post(
+            "/preview" + query,
+            body="## Unsaved draft\n\n**Bold**\n\n- [ ] Open\n- [x] Done\n\n```text\n  aligned\n```",
+        )
         self.assertIn("<strong>Bold</strong>", preview)
         self.assertIn("Unsaved draft", preview)
+        self.assertEqual(preview.count('<input type="checkbox" disabled'), 2)
+        self.assertIn('<pre class="text"><code>  aligned', preview)
         self.assertEqual(path.read_bytes(), saved)
         fingerprint = re.search(r'name="fingerprint" value="([a-f0-9]+)"', editor)[1]
         rendered = post(
@@ -185,7 +194,14 @@ class WorkflowTest(unittest.TestCase):
         published = get("/publish" + query)
         self.assertIn("Northshore Field Services", published)
         self.assertIn("data:image/png;base64,", published)
-        self.assertIn("Print or save as PDF", published)
+        self.assertNotIn("Print or save as PDF", published)
+        if pdf_available():
+            self.assertIn('target="_blank" rel="noopener"', published)
+            self.assertIn("&amp;download=1", published)
+            headers, pdf = request("GET", "/pdf" + query + "&download=1", binary=True)
+            self.assertIn("Content-Disposition: attachment;", headers)
+            self.assertIn("FIELD-000005%20New%20field%20procedure.pdf", headers)
+            self.assertTrue(pdf.startswith(b"%PDF-"))
         self.assertNotIn("FIELD-000005", get("/validate"))
         self.assertEqual(load_article(path)[0]["revision"], 4)
         self.assertIn("![Example screen](assets/my-screenshot-2.png)", path.read_text())

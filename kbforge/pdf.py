@@ -20,6 +20,16 @@ def theme_asset(repo, name, suffixes):
 
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+TASK_MARKERS = {"☐", "☑", "☒"}
+
+
+def pdf_filename(article_id, title):
+    """Suggest a portable filename while retaining Unicode titles."""
+    clean = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]', " ", str(title or ""))
+    clean = " ".join(clean.split()).strip(" .")
+    # Leave headroom for the ID and extension on filesystems with 255-byte names.
+    clean = clean.encode("utf-8")[: 245 - len(article_id)].decode("utf-8", "ignore")
+    return f"{article_id} {clean.rstrip(' .')}.pdf" if clean else f"{article_id}.pdf"
 
 
 def pdf_theme(repo, metadata):
@@ -207,6 +217,16 @@ def pdf_blocks(repo, path, blocks):
             )
             for index, item in enumerate(items):
                 marker = "•" if start is None else f"{start + index}."
+                if item and item[0]["t"] in ("Plain", "Para"):
+                    first = item[0]["c"]
+                    if (
+                        len(first) >= 2
+                        and first[0]["t"] == "Str"
+                        and first[0]["c"] in TASK_MARKERS
+                        and first[1]["t"] == "Space"
+                    ):
+                        marker = first[0]["c"]
+                        item = [{**item[0], "c": first[2:]}, *item[1:]]
                 gutter = max(14, 6 * len(marker) + 5)
                 for entry in pdf_blocks(repo, path, item):
                     if (
@@ -243,7 +263,7 @@ def pdf_available():
     return all(find_spec(module) is not None for module in ("reportlab", "pypdf"))
 
 
-def export_pdf(repo, path):
+def export_pdf(repo, path, *, article=None):
     if not pdf_available():
         raise ValueError(
             "Install PDF support with python -m pip install -r requirements-pdf.txt."
@@ -252,7 +272,7 @@ def export_pdf(repo, path):
 
     from .pdf_renderer import render_pdf
 
-    metadata, body = load_article(path)
+    metadata, body = article if article is not None else load_article(path)
     theme = pdf_theme(repo, metadata)
     if repo.config["branding"].get("logo"):
         theme["logo"] = str(

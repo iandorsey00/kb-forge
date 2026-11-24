@@ -23,6 +23,7 @@ from reportlab.platypus import (
 )
 from reportlab.platypus.tableofcontents import TableOfContents
 
+from .pdf import TASK_MARKERS
 from .pdf_fonts import DocumentFonts
 from .repository import article_author
 
@@ -243,17 +244,18 @@ class Publication(BaseDocTemplate):
 
 
 class ArticleImage(Image):
-    def __init__(self, path, inset, marker, style):
+    def __init__(self, path, inset, marker, style, bullet_font):
         super().__init__(path)
         self.inset = inset
         self.marker = marker
         self.style = style
+        self.bullet_font = bullet_font
 
     def draw(self):
         if self.marker:
             text, gutter = self.marker
             self.canv.setFillColor(INK)
-            self.canv.setFont(self.style.fontName, self.style.fontSize)
+            self.canv.setFont(self.bullet_font, self.style.fontSize)
             self.canv.drawString(
                 self.inset - gutter, self.drawHeight - self.style.fontSize, text
             )
@@ -311,11 +313,14 @@ def make_story(doc, blocks, depth):
             inset = indent + (12 * doc.unit if quoted else 0)
             available = doc.measure - inset - (padding if quoted else 0)
             width = block.get("width")
+            body_style = doc.styles["body"]
             image = ArticleImage(
                 block["image"],
                 inset,
                 (marker, gutter) if marker else None,
-                doc.styles["body"],
+                body_style,
+                doc.fonts.match(marker, body_style.fontWeight, False)
+                if marker in TASK_MARKERS else body_style.fontName,
             )
             if width is None:
                 scale = min(
@@ -352,7 +357,8 @@ def make_story(doc, blocks, depth):
             style = ParagraphStyle(
                 "indented",
                 parent=style,
-                bulletFontName=style.fontName,
+                bulletFontName=doc.fonts.match(marker, style.fontWeight, False)
+                if marker in TASK_MARKERS else style.fontName,
                 bulletFontSize=style.fontSize,
                 bulletIndent=inset - gutter,
                 leftIndent=inset,

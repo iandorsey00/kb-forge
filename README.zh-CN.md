@@ -35,10 +35,10 @@ python3 -m kbforge demo-work
 
 ### 体验演示流程
 
-1. 打开 **New article**（新建文章）。选择 **Procedure**（操作规程），将来源保持为 **New article**，填写标题、负责人和未来的复审日期，再添加一个便于搜索的标签，例如 `demo-cable`。点击 **Create draft**（创建草稿）。在刚复制的演示资料中，新文章编号为 `FIELD-000005`。
+1. 打开 **New article**（新建文章）。选择 **Procedure**（操作规程），将来源保持为 **New article**，填写标题和负责人。展开 **Additional details**（其他详细信息），设置未来的复审日期，再添加一个便于搜索的标签，例如 `demo-cable`。点击 **Create draft**（创建草稿）。在刚复制的演示资料中，新文章编号为 `FIELD-000005`。
 2. 在 **Purpose**（目的）和 **Steps**（操作步骤）下填写正文。使用 **Split**（分屏）可边写边查看 Markdown 的渲染效果。将光标移到需要插入图片的上一行，在 **Images**（图片）中选择 PNG 或 JPEG 图片并填写描述，再点击 **Insert images**（插入图片）。最后点击 **Save changes**（保存更改），一并保存正文和图片引用。
 3. 在 **Catalog**（目录）中搜索 `demo-cable`。打开文章，检查品牌样式和图片。通过 **Validation**（校验）查找问题。演示资料中的练习草稿故意缺少负责人、必要章节和图片，且已超过复审日期。
-4. 点击 **Publish**（发布），再点击 **Print or save as PDF**（打印或另存为 PDF）。在 Chromium 中选择“另存为 PDF”，关闭浏览器自带的页眉页脚，并在保存前检查预览。打印样式会提供 A4 页边距、页码和带品牌样式的标题区。可打开 `FIELD-000001` 的中文版，检查汉字和截图是否清晰。如果预览中缺少汉字，请安装系统简体中文字体。
+4. 点击 **Publish**（发布），然后选择 **Open branded PDF**（打开品牌 PDF）在新标签页中预览，或选择 **Download PDF**（下载 PDF）保存为 `<编号> <标题>.pdf`。如未显示按钮，请按下文安装 PDF 支持。可打开 `FIELD-000001` 的中文版，检查汉字和截图是否清晰。
 5. 用文本编辑器打开 `demo-work/articles/FIELD-000005/en-US.md`，查看文件开头的元数据和图片相对链接。直接打开该文章 `assets` 目录中的 PNG 或 JPEG 图片。
 
 可通过 `python3 -m kbforge demo-work --validate` 在终端中校验知识库。退出状态码 1 表示存在错误。运行 `python3 -m unittest discover -s tests` 可执行自动化测试。
@@ -49,7 +49,7 @@ python3 -m kbforge demo-work
 
 通过[自定义元数据字段](docs/standard.zh-CN.md#自定义元数据字段)，可在文章编辑器中添加指定类型的字段，并按需设置默认值。
 
-工作区仅监听本机地址，适合单人在本地维护知识库。浏览器界面为英文。可通过下文所述的分页渲染器或浏览器打印对话框导出 PDF。有关本地编号分配、Markdown 和导入的限制，请参阅文档标准。
+工作区仅监听本机地址，适合单人在本地维护知识库。浏览器界面为英文。可通过下文所述的分页渲染器导出 PDF。有关本地编号分配、Markdown 和导入的限制，请参阅文档标准。
 
 ### 发布带品牌样式的分页 PDF
 
@@ -60,7 +60,7 @@ python3 -m pip install -r requirements-pdf.txt
 python3 -m kbforge demo-work --export-pdf FIELD-000002 en-US --output article.pdf
 ```
 
-也可以在 **Publish → Open branded PDF** 中查看结果。有关封面、品牌图片和中文字体，请参阅[发布设置](docs/standard.zh-CN.md#品牌样式与发布)。分页导出支持标题、段落、列表、代码块、本地图片及使用竖线编写的 Markdown 表格。围栏代码块（包括标记为 `text` 的代码块）保留空白并带有底色，ASCII 文本采用等宽字体。表格单元格以纯文本呈现，图片以替代文字显示。通过浏览器打印可以保留丰富的行内样式。
+也可以在 **Publish → Open branded PDF** 中查看结果。有关封面、品牌图片和中文字体，请参阅[发布设置](docs/standard.zh-CN.md#品牌样式与发布)。分页导出支持标题、段落、列表、代码块、本地图片及使用竖线编写的 Markdown 表格。围栏代码块（包括标记为 `text` 的代码块）保留空白并带有底色，ASCII 文本采用等宽字体。表格单元格以纯文本呈现，图片以替代文字显示。如需打印纸质版或调整打印机设置，请在 PDF 查看器中打印已发布的 PDF。
 
 ### 将主题迁移到另一个知识库
 
@@ -147,7 +147,7 @@ python3 -m kbforge "/path/to/support-kb-prerelease"
 python3 -m kbforge work-collection --export-site --output published-site
 ```
 
-请先安装上文的 PDF 依赖，并使用新目录。结果包括索引页、共享样式表、记录文章编号、语言、修订号及相对输出路径的 `manifest.json`，以及每个已发布语言版本的品牌 HTML 页面和 PDF。以输出目录为基准，每个语言版本的文件并排保存在 `articles/<id>/<language>.html` 和 `articles/<id>/<language>.pdf`。首页为根目录下的 `index.html`，首页和各文章页均提供对应 PDF 的下载链接。首页可搜索已发布文章的正文、标题、编号和标签，无需服务器或网络连接。KB Forge 工作区的导航栏和目录页可以搜索正文和元数据，包括草稿。图片嵌入 HTML 页面，站内链接使用相对路径。可在本地打开 `index.html`，也可将整个输出目录部署到静态网站主机。
+请先安装上文的 PDF 依赖，并使用新目录。结果包括索引页、共享样式表、记录文章编号、语言、修订号及相对输出路径的 `manifest.json`，以及每个已发布语言版本的品牌 HTML 页面和 PDF。以输出目录为基准，每个语言版本的文件并排保存在 `articles/<id>/<language>.html` 和 `articles/<id>/<language>.pdf`。首页为根目录下的 `index.html`，首页和各文章页均提供对应 PDF 的下载链接，下载文件名为 `<编号> <标题>.pdf`。首页可搜索已发布文章的正文、标题、编号和标签，无需服务器或网络连接。KB Forge 工作区的导航栏和目录页可以搜索正文和元数据，包括草稿。图片嵌入 HTML 页面，站内链接使用相对路径。可在本地打开 `index.html`，也可将整个输出目录部署到静态网站主机。
 
 如果 PDF 生成失败，导出会报告文章编号和语言，并删除未完成的输出。中文 PDF 需要包含所需汉字的字体。使用 `--export-site --html-only` 可省略 PDF 及其链接。仅导出 HTML 时，自定义网页字体需使用 FontTools，无需安装 ReportLab 或 pypdf。
 
@@ -242,7 +242,7 @@ python3 -m kbforge work-collection --run-scheduled-backup
 
 ### 管理字体、编号与版本
 
-可通过[静态或可变字体族](docs/standard.zh-CN.md#发布字体)统一文章查看器、导出站点和 PDF 的字体。示例包含 Inter Variable、用于简体中文的 Noto Sans CJK SC、用于代码的 Source Code Pro，以及各自的 SIL 开放字体许可证。安装上文所述的发布依赖后，即可检查字体并在 PDF 中嵌入字形。修改字体后，从 Markdown 重新导出以更新分页。导入的 PDF 封面保留原有字体。
+可通过[静态或可变字体族](docs/standard.zh-CN.md#发布字体)统一文章查看器、导出站点和 PDF 的字体。示例包含 Inter Variable、用于简体中文的 Noto Sans CJK SC、用于代码的 Source Code Pro，以及各自的 SIL 开放字体许可证。要在其他知识库中使用示例字体，请将字体文件及对应许可证复制到该知识库的 `branding/` 目录，并将文档标准中的相关 `publishing` 设置合并到 `kbforge.yaml`。PDF 会自动使用内置的 Noto Sans Symbols 2 作为符号回退字体，无需配置。安装上文所述的发布依赖后，即可检查字体并在 PDF 中嵌入字形。修改字体后，从 Markdown 重新导出以更新分页。导入的 PDF 封面保留原有字体。
 
 知识库移交后，已有文章应保留原编号。采用正式编号规则后，可为新文章使用新前缀。如果现有文章必须重新编号，请保留新旧编号对照表，并在元数据中保存原编号。更新引用，然后重新生成受影响的导出文件。
 

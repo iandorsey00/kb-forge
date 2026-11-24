@@ -1,5 +1,3 @@
-document.querySelector("#print")?.addEventListener("click", () => window.print());
-
 const updatesLink = document.querySelector("#updates-link");
 if (updatesLink) {
     async function refreshUpdateLabel() {

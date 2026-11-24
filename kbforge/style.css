@@ -36,6 +36,16 @@ pre { padding:.8rem; white-space:pre-wrap; }
 .publication header { border-top:5px solid var(--brand); padding:1rem 0; border-bottom:1px solid var(--line); }
 .publication header h1 { margin:.8rem 0 .4rem; color:var(--brand); }
 .publication img { max-width:100%; height:auto; }
+.publication :is(pre,code) { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+.publication pre code { background:transparent; }
+.publication li:has(> input[type="checkbox"], > label > input[type="checkbox"], > p > input[type="checkbox"], > p > label > input[type="checkbox"]) {
+  list-style:none;
+}
+.publication li label:has(> input[type="checkbox"]) { display:inline; font-weight:inherit; }
+.publication li input[type="checkbox"] {
+  display:inline-block; width:1em; height:1em; padding:0; margin:0; margin-inline-end:.5em;
+  vertical-align:-.08em; accent-color:var(--brand,var(--accent));
+}
 .publication blockquote, .publication .note, .publication .tip,
 .publication .important, .publication .warning, .publication .caution {
   margin: .8rem 0; padding: .35rem 1rem; border-inline-start:3px solid var(--brand); background:#edf1f5;
@@ -44,12 +54,10 @@ pre { padding:.8rem; white-space:pre-wrap; }
 .publication h2 { color:var(--brand); margin-top:1.6rem; }
 .document-control { font-size:.85rem; color:var(--muted); }
 .publication aside { border-top:1px solid var(--line); margin-top:2rem; padding-top:.75rem; }
-/* Browser print fallback. The downloadable PDF has its own paginated renderer. */
+/* Keep regular browser printing readable. PDF publication uses its own renderer. */
 @page {
   size:A4;
-  margin:17mm 17mm 20mm;
-  @bottom-left { content:"Document copy"; font:9pt system-ui,sans-serif; color:#496461; }
-  @bottom-right { content:counter(page) " / " counter(pages); font:9pt system-ui,sans-serif; color:#496461; }
+  margin:17mm;
 }
 @media print {
   :root { font-size:11pt; }
@@ -116,6 +124,32 @@ pre { padding:.8rem; white-space:pre-wrap; }
 .reader-article .actions { justify-content:space-between; }
 .reader-site-home { display:inline-flex; align-items:center; gap:.55rem; font-weight:650; }
 .reader-site-home img { width:auto; height:28px; max-width:112px; object-fit:contain; }
+
+.visually-hidden {
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip-path:inset(50%); white-space:nowrap;
+}
+.create-page { max-width:760px; margin-inline:auto; }
+.create-heading { margin-bottom:1.5rem; }
+.create-heading h1 { margin-bottom:.45rem; }
+.create-heading p { margin:0; }
+.create-card { margin:0; background:white; border:1px solid var(--line); border-radius:14px; box-shadow:0 3px 12px #142a2a0b; }
+.create-section { padding:1.1rem clamp(1rem,4vw,1.65rem); }
+.create-section + .create-section, .create-actions { border-top:1px solid var(--line); }
+.create-section h2, .create-section summary { margin:0 0 .65rem; font-size:1.04rem; font-weight:650; }
+.create-section summary { cursor:pointer; margin:0; }
+.create-section[open] summary { margin-bottom:.75rem; }
+.create-section p { margin:0 0 .75rem; font-size:.87rem; }
+.create-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem 1rem; }
+.create-basics { grid-template-columns:minmax(0,2fr) minmax(0,1fr); }
+.create-fields input,.create-fields select { margin-bottom:0; min-height:2.7rem; }
+.create-fields label { font-size:.88rem; overflow-wrap:anywhere; }
+.create-source { grid-column:1/-1; min-width:0; }
+.create-source p { margin:.35rem 0 0; }
+.create-actions { display:flex; justify-content:flex-end; gap:.6rem; padding:1rem clamp(1rem,4vw,1.65rem); background:#f7faf8; border-radius:0 0 14px 14px; }
+@media (max-width:560px) {
+  .create-fields { grid-template-columns:minmax(0,1fr); }
+}
 
 /* The editing workspace gives the document and its settings separate columns. */
 .editor-page {

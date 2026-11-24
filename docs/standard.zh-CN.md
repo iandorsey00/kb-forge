@@ -115,7 +115,7 @@ HTML 页面显示品牌图片和 HTML 标题区。在 **Publish**（发布）中
 
 ### 发布字体
 
-将 TrueType 字体放在知识库的 `branding/` 目录中。示例知识库附带以下可选的原始字体文件及其 SIL 开放字体许可证。请复制要使用的字体及其许可证：
+将 TrueType 字体放在知识库的 `branding/` 目录中。要使用以下示例字体，请从 `example/branding/` 将所需字体及对应的 SIL 开放字体许可证复制到知识库的 `branding/` 目录。将下方的相关设置合并到现有 `kbforge.yaml`，然后重启 KB Forge。
 
 - Inter Variable 4.1 正体和斜体，用于文档正文。[许可证](../example/branding/Inter-OFL.txt)
 - Noto Sans CJK SC 2.004，用于简体中文。此地区版本约为 17 MiB。[上游项目](https://github.com/notofonts/noto-cjk/tree/Sans2.004) · [许可证](../example/branding/NotoSansCJK-OFL.txt)
@@ -144,8 +144,8 @@ HTML 页面显示品牌图片和 HTML 标题区。在 **Publish**（发布）中
 
 - 定义字体族时，必须提供 `fonts.regular`。静态字体族还可分别提供 `bold`、`italic` 和 `bold_italic` 文件。可变字体的正体和斜体文件可分别提供各自的字重。如果没有单独的斜体文件，带有 `ital` 或 `slnt` 轴的正体文件也可提供倾斜字形。
 - `font_weights` 为可选项。正文和图注默认使用 400，标题默认使用 700。各项均接受 1 至 1000 的整数。Markdown 加粗至少使用字重 700，强调使用斜体，嵌套强调可同时应用两种样式。可变字体根据 `wght` 轴的有效范围应用所需字重。PDF 中其他轴使用默认值，`ital` 和 `slnt` 可用于选择字形样式。静态字体族在 PDF 中会选用所需样式里字重最接近的字体。没有斜体时会使用正体。
-- `font_fallbacks` 可将语言标签或 `default` 映射到字体文件名或另一组字体配置。KB Forge 依次尝试主字体、匹配语言的回退字体、默认回退字体及其他已配置的回退字体。PDF 缺少中文字形时，还可尝试系统的中日韩字体。若依然缺少字形，导出会提示具体字符。
-- `code_font` 为可选项，接受 TrueType `.ttf` 文件名。它控制 PDF 围栏代码块和 HTML 中行内及围栏代码的字体。PDF 代码默认使用 Courier，并使用发布字体族或其回退字体补足其他字形。
+- `font_fallbacks` 可将语言标签或 `default` 映射到字体文件名或另一组字体配置。KB Forge 依次尝试主字体、匹配语言的回退字体、默认回退字体及其他已配置的回退字体。PDF 缺少中文字形时，还可尝试系统的中日韩字体。最后尝试内置的 Noto Sans Symbols 2，覆盖 ☐、☑、☒、✓ 等符号。此回退无需配置，PDF 会嵌入实际使用的字形。如果所有字体均无对应字形，导出会提示具体字符。[上游版本](https://github.com/notofonts/symbols/releases/tag/NotoSansSymbols2-v2.008) · [SIL OFL 1.1 许可证](../kbforge/resources/NotoSansSymbols2-OFL.txt)
+- `code_font` 为可选项，接受 TrueType `.ttf` 文件名。请选择等宽字体，用于 PDF 围栏代码块和 HTML 中的行内及围栏代码，包括标记为 `text` 的代码块。HTML 默认使用系统等宽字体。PDF 代码默认使用 Courier，并使用发布字体族或其回退字体补足其他字形。
 - 交互式文章查看器和导出的 HTML 使用本地 TrueType `.ttf` 文件，通过 CSS 声明字重范围。导出的站点包含引用的字体和许可证说明，供离线使用。PDF 通过 FontTools 在内存中生成可变 TrueType 字体的静态实例，并嵌入所需字形。PDF 支持 TrueType 字体集合（`.ttc` 的首个字体）。目前不支持 CFF 和 CFF2 OpenType 轮廓。
 - 仍可通过 `publishing.font` 指定单个字体。PDF 依次采用 `publishing.fonts`、`publishing.font`、`KBFORGE_PDF_FONT` 环境变量中的绝对路径，最后使用内置字体。环境变量仅用于 PDF。已有知识库无需迁移配置。
 - 主题包会保留引用的字体、许可证说明和设置。共享自定义字体前，请确认再分发许可，并在 `font_licenses` 中列出随附的版权或许可证文件名。[Inter 官方发布](https://github.com/rsms/inter/releases) · [SIL 开放字体许可证常见问题](https://openfontlicense.org/ofl-faq/)

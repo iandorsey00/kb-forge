@@ -25,6 +25,7 @@ from .fonts import (
 
 FONT_LOCK = Lock()
 CJK = re.compile(r"[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef\U00020000-\U000323af]")
+SYMBOLS_FONT = Path(__file__).with_name("resources") / "NotoSansSymbols2-Regular.ttf"
 
 
 def instance_coordinates(axes, weight, italic):
@@ -172,6 +173,7 @@ class DocumentFonts:
             fallback = [*self.preferred_fallbacks]
             if self.system_cjk and CJK.fullmatch(character):
                 fallback.append({"regular": self.system_cjk})
+            fallback.append({"regular": SYMBOLS_FONT})
             for family in fallback:
                 name = self.face(family, weight, italic)
                 if covers(name):

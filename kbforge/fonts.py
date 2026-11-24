@@ -247,7 +247,7 @@ def web_fonts(repo, url_for):
     if mono := code_font(repo):
         face_rules({"regular": mono}, "KBForgeCode")
         rules.append(
-            '.publication :is(pre,code){font-family:"KBForgeCode",monospace;font-weight:400}'
+            '.publication :is(pre,code){font-family:"KBForgeCode",ui-monospace,Consolas,monospace;font-weight:400}'
         )
     if not assets and weights == DEFAULT_WEIGHTS:
         return "", {}

@@ -12,7 +12,7 @@ import re
 import subprocess
 from urllib.parse import quote, unquote, urlencode, urlsplit
 
-from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, pdf_theme, theme_asset
+from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, pdf_filename, pdf_theme, theme_asset
 from .fonts import font_notices, web_fonts
 from .repository import (
     ASSET,
@@ -146,7 +146,7 @@ def render_body(repo, path, body, link_for=article_url):
 
     ast["blocks"] = rewrite(ast["blocks"])
     try:
-        return subprocess.run(
+        rendered = subprocess.run(
             ["pandoc", "--sandbox", "--from=json", "--to=html5", "--wrap=none"],
             input=json.dumps(ast),
             encoding="utf-8",
@@ -156,6 +156,12 @@ def render_body(repo, path, body, link_for=article_url):
         ).stdout
     except subprocess.SubprocessError as error:
         raise ValueError("Could not render the article.") from error
+    # Pandoc emits native task checkboxes. Publications show their saved state.
+    return re.sub(
+        r'(<input type="checkbox")(?=[\s/>])(?![^>]*\sdisabled\b)',
+        r'\1 disabled',
+        rendered,
+    )
 
 
 def branded_article(repo, path, link_for=article_url):
@@ -387,8 +393,9 @@ def export_html(repo, destination, *, include_pdfs=True, release=None, published
                     "下载 PDF" if path.stem.lower().startswith("zh") else "Download PDF"
                 )
                 index_pdf = quote(pdf_path.relative_to(destination).as_posix())
-                index_download = f'<a class="reader-pdf" href="{esc(index_pdf)}" download>{label}</a>'
-                article_download = f'<a class="reader-pdf" href="{esc(quote(pdf_path.name))}" download>{label}</a>'
+                filename = esc(pdf_filename(edition["id"], title))
+                index_download = f'<a class="reader-pdf" href="{esc(index_pdf)}" download="{filename}">{label}</a>'
+                article_download = f'<a class="reader-pdf" href="{esc(quote(pdf_path.name))}" download="{filename}">{label}</a>'
             article_html = branded_article(
                 repo, path, lambda other: link_for(other, article_folder)
             )

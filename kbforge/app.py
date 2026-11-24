@@ -11,12 +11,12 @@ import re
 import secrets
 import shutil
 import sys
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 from .backup import backup_collections, backup_schedule, run_scheduled_backup
 from .package import import_package
 from .theme import export_theme, import_theme
-from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, theme_asset
+from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, pdf_filename, theme_asset
 from .publishing import (
     export_html,
     article_url,
@@ -96,11 +96,13 @@ class Handler(BaseHTTPRequestHandler):
         self.token = token
         super().__init__(*args)
 
-    def send_content(self, body, status=200, content_type="text/html; charset=utf-8"):
+    def send_content(self, body, status=200, content_type="text/html; charset=utf-8", *, disposition=None):
         data = body.encode("utf-8") if isinstance(body, str) else body
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
+        if disposition:
+            self.send_header("Content-Disposition", disposition)
         self.send_header(
             "Content-Security-Policy",
             "default-src 'none'; style-src 'self' 'unsafe-inline'; img-src data:; font-src 'self'; "
@@ -122,7 +124,7 @@ class Handler(BaseHTTPRequestHandler):
                 logo = f'<img class="workspace-logo" src="{esc(src)}" alt="">'
             except (ValueError, OSError):
                 pass
-        fonts = '<link rel="stylesheet" href="/fonts.css">' if publication else ""
+        fonts = '<link rel="stylesheet" href="/fonts.css">' if publication or editor else ""
         update_label = self.update_label()
         available = ' class="update-available"' if update_label == "Update app…" else ""
         layout = ' class="editor-page"' if editor else ""
@@ -554,16 +556,39 @@ class Handler(BaseHTTPRequestHandler):
         translation = select(
             "translation", "Source edition", sources, empty="New article"
         )
-        fields = (
-            self.standard_metadata_fields({}, FIELDS)
-            + self.related_field({})
-            + self.custom_metadata_fields({}, creating=True)
+        details = self.standard_metadata_fields({}, ("title", "owner"))
+        optional = self.standard_metadata_fields(
+            {}, ("description", "review_on", *LIST_FIELDS)
+        ) + self.related_field({})
+        custom = self.custom_metadata_fields({}, creating=True)
+        custom_section = (
+            f'<details class="create-section"><summary>Custom metadata</summary>'
+            f'<div class="create-fields">{custom}</div></details>'
+            if custom else ""
         )
         self.page(
             "New article",
-            f"""<h1>New article</h1><form class="panel" method="post">
-{self.form_token()}<div class="grid">{languages}{types}{translation}{fields}</div>
-<button>Create draft</button></form>""",
+            f"""<div class="create-page">
+<nav class="editor-breadcrumb" aria-label="Breadcrumb"><a href="/catalog">Catalog</a>
+<span aria-hidden="true">/</span> New article</nav>
+<header class="create-heading"><h1>New article</h1>
+<p class="muted">Set up a draft, then write the article in the editor.</p></header>
+<form class="create-card" method="post" action="/create">
+{self.form_token()}
+<section class="create-section" aria-labelledby="create-details">
+<h2 id="create-details">Article details</h2>
+<p class="muted">Title and owner are required.</p>
+<div class="create-fields create-basics">{details}</div></section>
+<section class="create-section" aria-labelledby="create-edition">
+<h2 id="create-edition">Edition</h2>
+<div class="create-fields">{languages}{types}
+<div class="create-source">{translation}<p class="muted">Choose a source edition only when creating a translation.</p></div>
+</div></section>
+<details class="create-section"><summary>Additional details</summary>
+<div class="create-fields">{optional}</div></details>
+{custom_section}
+<footer class="create-actions"><a class="button secondary" href="/catalog">Cancel</a>
+<button type="submit">Create draft</button></footer></form></div>""",
         )
 
     def create(self, values):
@@ -834,24 +859,35 @@ data-preview="{esc(article_url(path, "preview"))}">
         self.page("Validation", f"<h1>Validation</h1>{content}")
 
     def pdf(self, values):
+        path = self.path_from(values)
+        article = load_article(path)
+        filename = pdf_filename(path.parent.name, article[0].get("title"))
+        mode = "attachment" if values.get("download") == "1" else "inline"
         self.send_content(
-            export_pdf(self.repo, self.path_from(values)),
+            export_pdf(self.repo, path, article=article),
             content_type="application/pdf",
+            disposition=f"{mode}; filename=\"{path.parent.name}.pdf\"; filename*=UTF-8''{quote(filename, safe='')}",
         )
 
     def publish(self, values):
         path = self.path_from(values)
+        url = esc(article_url(path, "pdf"))
         pdf_link = (
-            f'<a class="button" href="{esc(article_url(path, "pdf"))}">Open branded PDF</a>'
+            f'<a class="button" href="{url}" target="_blank" rel="noopener">Open branded PDF <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>'
+            f'<a class="button secondary" href="{url}&amp;download=1">Download PDF</a>'
             if pdf_available()
             else ""
+        )
+        dependency_help = (
+            "" if pdf_link else
+            '<p class="muted">Install PDF support with <code>python -m pip install -r requirements-pdf.txt</code>, then restart KB Forge.</p>'
         )
         self.page(
             "Publish article",
             f'''<div class="actions">
 <a class="button secondary" href="{esc(article_url(path))}">Back to article</a>
-{pdf_link}<button id="print">Print or save as PDF</button></div>
-<p class="muted no-print">Choose Save as PDF in the print dialog. For best results, use a current Chromium browser and turn off its built-in headers and footers.</p>
+{pdf_link}</div>
+{dependency_help}
 {branded_article(self.repo, path)}''',
             publication=True,
         )

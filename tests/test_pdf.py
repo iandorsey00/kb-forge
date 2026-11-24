@@ -13,6 +13,24 @@ from kbforge.repository import Repository, load_article, save_article
 
 @unittest.skipUnless(pdf_available(), "Optional PDF dependencies are missing")
 class PublishingTest(unittest.TestCase):
+    def test_task_markers_and_bundled_symbol_fallback(self):
+        from pypdf import PdfReader
+
+        with TemporaryDirectory() as directory:
+            collection = Path(directory) / "collection"
+            shutil.copytree(Path(__file__).resolve().parents[1] / "example", collection)
+            repo = Repository(collection)
+            repo.config.pop("publishing", None)
+            article = repo.article_path("FIELD-000001", "en-US")
+            meta, _ = load_article(article)
+            save_article(article, meta, "## Checklist\n\n- [ ] To do\n- [x] Done\n\nSymbols: ☐ ☑ ☒ ✓\n")
+            pdf = PdfReader(BytesIO(export_pdf(repo, article)))
+            text = "".join(page.extract_text() for page in pdf.pages)
+            self.assertEqual(text.count("☐"), 2)
+            self.assertEqual(text.count("☒"), 2)
+            self.assertNotIn("•", text)
+            self.assertIn("Symbols: ☐ ☑ ☒ ✓", text)
+
     def test_sized_list_image_and_shaded_quote(self):
         from pypdf import PdfReader
 
@@ -168,11 +186,11 @@ class PublishingTest(unittest.TestCase):
                 {"articles/FIELD-000001/en-US.pdf", "articles/FIELD-000002/en-US.pdf"},
             )
             self.assertIn(
-                'href="articles/FIELD-000001/en-US.pdf" download',
+                'href="articles/FIELD-000001/en-US.pdf" download="FIELD-000001 Restore a room display with no signal.pdf"',
                 (site / "index.html").read_text(encoding="utf-8"),
             )
             self.assertIn(
-                'href="en-US.pdf" download',
+                'href="en-US.pdf" download="FIELD-000001 Restore a room display with no signal.pdf"',
                 (site / "articles/FIELD-000001/en-US.html").read_text(encoding="utf-8"),
             )
             pdf = PdfReader(site / "articles/FIELD-000001/en-US.pdf")

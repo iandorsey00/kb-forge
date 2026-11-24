@@ -1,5 +1,19 @@
 # Changelog · 更新日志
 
+## v0.8.0
+
+- Group core fields on the New article screen and make additional details and custom metadata collapsible.
+- Render Markdown task items with checkboxes in HTML and PDF, and use monospace for fenced text in HTML.
+- Bundle Noto Sans Symbols 2 as the final PDF font fallback.
+- Open branded PDFs in a new tab and suggest `<id> <title>.pdf` for downloads. Print from a PDF viewer.
+
+### 简体中文
+
+- 在新建文章页面集中显示核心字段，并支持折叠其他详细信息和自定义元数据。
+- 在 HTML 和 PDF 中用复选框显示 Markdown 任务项，并在 HTML 中以等宽字体显示围栏文本。
+- 内置 Noto Sans Symbols 2 作为 PDF 的最后回退字体。
+- 在新标签页中打开品牌 PDF，下载时建议使用 `<编号> <标题>.pdf` 作为文件名。可通过 PDF 查看器打印。
+
 ## v0.7.0
 
 - Redesign the article editor with a larger writing area, formatting controls, Write, Split, and Preview views, and a collapsible sidebar for article details, classification, and images.
