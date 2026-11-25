@@ -3,6 +3,7 @@
 import argparse
 import base64
 import hashlib
+import json
 from datetime import date
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +20,7 @@ from .theme import export_theme, import_theme
 from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, pdf_filename, theme_asset
 from .publishing import (
     export_html,
+    export_pdfs,
     article_url,
     branded_article,
     esc,
@@ -30,6 +32,7 @@ from .site_release import change_lines, copy_site, publish_site, rollback_site
 from .collaboration import clone_site, push_site
 from .fonts import web_fonts
 from .repository import (
+    ASSET,
     LIST_FIELDS,
     STATUSES,
     Repository,
@@ -45,6 +48,7 @@ from .renumber import renumber
 from .migrate import MIGRATIONS, migrate_articles
 
 STYLE = Path(__file__).with_name("style.css")
+PLAIN_TEXT = "text/plain; charset=utf-8"
 FIELDS = {
     "title": "Title",
     "description": "Description",
@@ -152,6 +156,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(400, "Use the local address printed at startup.")
             return
         target = urlsplit(self.path)
+        values = {}
         try:
             params = parse_qs(target.query, max_num_fields=60)
             if method == "POST":
@@ -177,6 +182,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not secrets.compare_digest(
                     params.get("_token", [""])[0].encode(), self.token.encode()
                 ):
+                    if self.headers.get("Accept") == "text/plain":
+                        self.send_content("Reload the editor and try again.", 403, PLAIN_TEXT)
+                        return
                     self.page(
                         "Forbidden",
                         "<h1>Forbidden</h1><p>Reload the form and try again.</p>",
@@ -235,9 +243,19 @@ class Handler(BaseHTTPRequestHandler):
                 409,
             )
         except (ValueError, OSError, KeyError, TypeError) as error:
+            if method == "POST" and self.headers.get("Accept") == "text/plain":
+                self.send_content(str(error), 400, PLAIN_TEXT)
+                return
+            back = ""
+            if target.path in ("/article", "/edit", "/publish", "/pdf") and values:
+                try:
+                    edit_url = esc(article_url(self.path_from(values), "edit"))
+                    back = f'<p><a href="{edit_url}">Return to the editor</a></p>'
+                except ValueError:
+                    pass
             self.page(
                 "Request could not be completed",
-                f"<h1>Request could not be completed</h1><p>{esc(error)}</p>",
+                f"<h1>Request could not be completed</h1><p>{esc(error)}</p>{back}",
                 400,
             )
 
@@ -382,20 +400,38 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(group_value, list):
                 group_value = ", ".join(map(str, group_value))
             rows.append((str(group_value), path, meta))
-        rows.sort(
-            key=lambda row: (
-                row[0].casefold(),
-                str(row[2].get("title", "")).casefold(),
-                row[1],
-            )
-        )
-        headers = ["Article", "Language", "Type", "Owner", "Status", "Review date"]
+        sort_options = {
+            "title": "Title (A–Z)",
+            "number": "Article number (ascending)",
+            "number-desc": "Article number (descending)",
+            "updated": "Recently updated",
+            "review": "Next review date",
+        }
+        sort = values.get("sort", "title")
+        if sort not in sort_options:
+            sort = "title"
+
+        def sort_key(row):
+            _, path, meta = row
+            if sort.startswith("number"):
+                parts = re.split(r"([0-9]+)", path.parent.name.casefold())
+                return tuple(int(part) if index % 2 else part for index, part in enumerate(parts))
+            if sort == "review":
+                return str(meta.get("review_on") or "9999-12-31")
+            if sort == "updated":
+                return str(meta.get("updated_on") or "")
+            return str(meta.get("title", "")).casefold()
+
+        rows.sort(key=lambda row: row[1])
+        rows.sort(key=sort_key, reverse=sort in ("number-desc", "updated"))
+        rows.sort(key=lambda row: row[0].casefold())
+        headers = ["Article", "Language", "Type", "Owner", "Status", "Review date", "Updated"]
         rendered_rows = [
             [
                 f'<a href="{esc(article_url(path))}">{esc(meta.get("title", path.stem))}</a><br><small>{esc(path.parent.name)}</small>',
                 *[
                     esc(meta.get(key, ""))
-                    for key in ("language", "type", "owner", "status", "review_on")
+                    for key in ("language", "type", "owner", "status", "review_on", "updated_on")
                 ],
             ]
             for _, path, meta in rows
@@ -423,6 +459,7 @@ class Handler(BaseHTTPRequestHandler):
                 "All statuses",
             )
             + select("group", "Group by", group_fields.items(), group, "None")
+            + select("sort", "Sort by", sort_options.items(), sort)
         )
         self.page(
             "Article catalog",
@@ -664,9 +701,9 @@ class Handler(BaseHTTPRequestHandler):
                 form_id=form_id,
             )
         assets = "".join(
-            f"<li><code>{esc(file.relative_to(path.parent).as_posix())}</code></li>"
-            for file in sorted((path.parent / "assets").glob("*"))
-            if file.is_file()
+            f'<li data-asset="{esc(file.name)}"><code>{esc(file.name)}</code></li>'
+            for file in sorted(self.repo.path("articles", path.parent.name, "assets").glob("*"))
+            if ASSET.fullmatch(file.name) and file.is_file() and not file.is_symlink()
         )
         basics = self.standard_metadata_fields(
             metadata, ("title", "description", "owner", "review_on"), form_id=form_id
@@ -679,11 +716,6 @@ class Handler(BaseHTTPRequestHandler):
             if custom
             else ""
         )
-        assets_section = (
-            f'<details class="editor-assets"><summary>Attached files</summary><ul>{assets}</ul></details>'
-            if assets
-            else ""
-        )
         self.page(
             "Edit article",
             f'''<div class="editor-breadcrumb"><a href="/catalog">Catalog</a><span aria-hidden="true">/</span> Edit article</div>
@@ -693,9 +725,10 @@ class Handler(BaseHTTPRequestHandler):
 <span>Revision {esc(metadata.get("revision", ""))}</span></p></div>
 <div class="editor-actions">
 <span id="editor-save-state" role="status"></span>
-<a class="button secondary" href="{esc(article_url(path))}">View article</a>
+<a class="button secondary" href="{esc(article_url(path))}" target="_blank" rel="noopener">View article<span class="visually-hidden"> (opens in a new tab)</span></a>
 <button id="editor-save" type="submit" form="{form_id}">Save changes</button>
 </div></header>
+<p id="editor-save-error" role="alert" hidden></p>
 <div class="editor-layout">
 <form id="{form_id}" method="post" action="{esc(article_url(path, "edit"))}"
 data-preview="{esc(article_url(path, "preview"))}">
@@ -716,7 +749,7 @@ data-preview="{esc(article_url(path, "preview"))}">
 <button type="button" data-format="list">List</button>
 <button type="button" data-format="link">Link</button>
 </div>
-<a href="#image-upload">Add images</a>
+<a href="#image-drawer" id="open-image-drawer">Images</a>
 </div>
 <div class="editor-panes" data-mode="write">
 <div class="editor-source">
@@ -736,21 +769,23 @@ data-preview="{esc(article_url(path, "preview"))}">
 <details class="editor-card"><summary>Classification</summary>
 <div class="editor-fields">{classification}{self.related_field(metadata, form_id=form_id)}</div></details>
 {custom_section}
-<form class="editor-card editor-images" id="image-upload" method="post" action="{esc(article_url(path, "image"))}">
-{self.form_token()}<h2>Images</h2>
+<details class="editor-card" id="image-drawer"><summary>Images</summary>
+<form class="editor-images" id="image-upload" method="post" action="{esc(article_url(path, "image"))}">
+{self.form_token()}
 <label class="editor-image-picker">Choose images
 <input id="image-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple></label>
 <p class="editor-help">You can also drop files here or paste an image into the Markdown editor.</p>
 <div id="image-queue"></div>
-<details class="editor-assets"><summary>Batch options</summary>
 <div class="grid">
-<label>Width for this batch (%)<input name="width" type="number" min="1" max="100" placeholder="Automatic"></label>
+<label>Image width<input name="width" pattern="(?:[1-9][0-9]{{0,3}}|10000)(?:px)?|(?:[1-9][0-9]?|100)%" title="Use 1% to 100% or 1px to 10000px." placeholder="200px or 60%"></label>
 <label>Indentation for list images (spaces)<input name="indent" type="number" min="0" max="24" placeholder="Automatic"></label>
-</div></details>
+</div>
 <button type="submit" class="button secondary">Insert images</button>
 <p id="upload-error" role="status"></p>
 <noscript><p>Enable JavaScript to attach images through this form.</p></noscript>
-{assets_section}</form>
+<div class="editor-assets"><h3>Attached files</h3>
+<p id="image-empty" class="editor-help"{' hidden' if assets else ''}>No images attached yet.</p>
+<ul id="image-library">{assets}</ul></div></form></details>
 </aside></div>''',
             editor=True,
         )
@@ -808,7 +843,11 @@ data-preview="{esc(article_url(path, "preview"))}">
                 updates["revision"] = metadata["revision"] + 1
                 updates["updated_on"] = date.today().isoformat()
                 save_article(path, {**metadata, **updates}, new_body)
-        self.redirect(article_url(path))
+        location = article_url(path)
+        if self.headers.get("Accept") == "text/plain":
+            self.send_content(location, content_type=PLAIN_TEXT)
+        else:
+            self.redirect(location)
 
     def upload(self, values):
         """Store an image and return its reference or append it in legacy mode."""
@@ -817,10 +856,13 @@ data-preview="{esc(article_url(path, "preview"))}">
         if not alt:
             raise ValueError("Describe the image for readers.")
         alt = alt.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
-        width = values.get("width", "")
-        attributes = f"{{width={width}%}}" if width else ""
+        width = values.get("width", "").strip()
+        attributes = ""
         if width:
-            image_width(["", [], [["width", f"{width}%"]]])
+            # Older clients send a bare number for percentages.
+            if re.fullmatch(r"[0-9]+", width):
+                width += "%"
+            attributes = f'{{width={image_width(["", [], [["width", width]]])}}}'
         with self.server.write_lock:
             metadata, body = load_article(path)
             encoded = values.get("image", "")
@@ -831,10 +873,8 @@ data-preview="{esc(article_url(path, "preview"))}">
             )
             markdown = f"![{alt}]({relative}){attributes}"
             if values.get("insert") == "draft":
-                import json
-
                 self.send_content(
-                    json.dumps({"markdown": markdown}),
+                    json.dumps({"markdown": markdown, "name": Path(relative).name}),
                     content_type="application/json",
                 )
                 return
@@ -907,6 +947,11 @@ def main():
     )
     actions.add_argument("--export-pdf", nargs=2, metavar=("ID", "LANGUAGE"))
     actions.add_argument(
+        "--export-pdfs",
+        action="store_true",
+        help="Export every published edition as a branded PDF in one folder",
+    )
+    actions.add_argument(
         "--init", action="store_true", help="Create a blank collection"
     )
     actions.add_argument(
@@ -957,7 +1002,7 @@ def main():
     parser.add_argument("--digits", type=int, default=5, help="ID digits for --init")
     parser.add_argument("--language", default="en-US", help="Language for --init")
     parser.add_argument(
-        "--output", type=Path, help="Output path for PDF, HTML, or backup ZIP"
+        "--output", type=Path, help="Output file or folder for export or backup"
     )
     actions.add_argument(
         "--export-theme", type=Path, metavar="ZIP", help="Export branding and layout"
@@ -1021,6 +1066,7 @@ def main():
     backup = args.backup_collection or args.backup_all_collections
     if bool(
         args.export_pdf
+        or args.export_pdfs
         or args.export_site
         or args.clone_site
         or args.copy_site
@@ -1188,6 +1234,11 @@ def main():
             import_theme(repo, args.import_theme)
             print(f"Applied theme to {repo.root}")
             return 0
+        if args.export_pdfs:
+            count = export_pdfs(repo, args.output)
+            unit = "PDF" if count == 1 else "PDFs"
+            print(f"Exported {count} {unit} to {args.output}")
+            return 0
         if args.export_pdf:
             import os
             import tempfile
@@ -1211,9 +1262,16 @@ def main():
                 print(f"{severity}\t{path}\t{message}")
             return int(any(severity == "Error" for severity, _, _ in findings))
         schedule = backup_schedule(repo)
-        with ThreadingHTTPServer(
-            ("127.0.0.1", args.port), partial(Handler, repo, secrets.token_hex(32))
-        ) as server:
+        try:
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", args.port), partial(Handler, repo, secrets.token_hex(32))
+            )
+        except OSError as error:
+            raise ValueError(
+                f"Could not start the workspace at 127.0.0.1:{args.port}: {error}. "
+                "If another program is using the port, choose another with --port."
+            ) from error
+        with server:
             server.write_lock = threading.Lock()
             server.update_lock = threading.Lock()
             stop = threading.Event()

@@ -31,6 +31,8 @@ if (editor) {
     const previewStatus = document.querySelector("#editor-preview-status");
     const previewContent = document.querySelector("#editor-preview-content");
     const saveState = document.querySelector("#editor-save-state");
+    const saveError = document.querySelector("#editor-save-error");
+    const layout = editor.closest(".editor-layout");
     const lineCount = document.querySelector("#editor-line-count");
     let dirty = false;
     let timer;
@@ -60,10 +62,15 @@ if (editor) {
         try {
             const response = await fetch(editor.dataset.preview, {
                 method: "POST",
+                headers: {Accept: "text/plain"},
                 body: new URLSearchParams({_token: editor.elements._token.value, body: markdown}),
                 signal,
             });
-            if (!response.ok) throw new Error("Preview failed.");
+            if (!response.ok) {
+                const reason = response.headers.get("Content-Type")?.startsWith("text/plain")
+                    ? await response.text() : "Could not render the preview.";
+                throw new Error(reason);
+            }
             const html = await response.text();
             if (signal.aborted) return;
             const fragment = document.createElement("template");
@@ -83,10 +90,10 @@ if (editor) {
             }
             previewContent.replaceChildren(fragment.content);
             previewStatus.textContent = "";
-        } catch {
+        } catch (error) {
             if (!signal.aborted) {
                 previewContent.replaceChildren();
-                previewStatus.textContent = "Could not render the preview. You can continue editing.";
+                previewStatus.textContent = error.message + " You can continue editing.";
             }
         }
     }
@@ -161,9 +168,33 @@ if (editor) {
         }
     });
 
-    editor.addEventListener("submit", event => {
-        if (save.disabled) event.preventDefault();
-        else dirty = false;
+    editor.addEventListener("submit", async event => {
+        event.preventDefault();
+        if (save.disabled) return;
+        const draft = new URLSearchParams(new FormData(editor));
+        saveError.hidden = true;
+        save.disabled = layout.inert = true;
+        saveState.textContent = "Saving…";
+        try {
+            const response = await fetch(editor.action, {
+                method: "POST", headers: {Accept: "text/plain"}, body: draft,
+            });
+            const message = response.headers.get("Content-Type")?.startsWith("text/plain")
+                ? await response.text() : "The server could not save this article.";
+            if (!response.ok || !message.startsWith("/article?")) {
+                saveError.textContent = message + " Your draft is still in the editor.";
+                saveError.hidden = false;
+                return;
+            }
+            dirty = false;
+            window.location.assign(message);
+        } catch {
+            saveError.textContent = "Could not reach KB Forge. Your draft is still in the editor.";
+            saveError.hidden = false;
+        } finally {
+            save.disabled = layout.inert = false;
+            saveState.textContent = dirty ? "Unsaved changes" : "";
+        }
     });
 
     window.addEventListener("beforeunload", event => {
@@ -179,14 +210,81 @@ if (editor) {
 
 const upload = document.querySelector("#image-upload");
 if (upload) {
+    const drawer = document.querySelector("#image-drawer");
     const input = upload.querySelector("#image-file");
     const queue = upload.querySelector("#image-queue");
     const status = upload.querySelector("#upload-error");
     const button = upload.querySelector("button[type=submit]");
+    const library = upload.querySelector("#image-library");
+    const widthInput = upload.elements.width;
     const entries = new Map();
+
+    function imageWidth() {
+        const width = widthInput.value;
+        return /^[0-9]+$/.test(width) ? width + "px" : width;
+    }
+
+    function insertImages(references, override = upload.elements.indent.value) {
+        if (body.closest(".editor-source").hidden) {
+            document.querySelector('#editor-modes [data-mode="write"]').click();
+        }
+        const position = body.selectionEnd;
+        const lineEnd = body.value.indexOf("\n", position);
+        const insertAt = lineEnd < 0 ? body.value.length : lineEnd;
+        const lineStart = position === 0 ? 0 : body.value.lastIndexOf("\n", position - 1) + 1;
+        const line = body.value.slice(lineStart, insertAt);
+        const marker = line.match(/^ *(?:[-+*]|\d{1,9}[.)]) +/);
+        const indent = " ".repeat(override === "" ? (marker?.[0].length ?? 0) : Number(override));
+        const images = references.map(reference => indent + reference).join("\n\n");
+        body.setRangeText((insertAt ? "\n\n" : "") + images + "\n", insertAt, insertAt, "end");
+        body.focus();
+        body.dispatchEvent(new Event("input", {bubbles: true}));
+    }
+
+    function addAssetActions(item) {
+        for (const label of ["Insert", "Copy Markdown"]) {
+            const control = document.createElement("button");
+            control.type = "button";
+            control.className = "button secondary";
+            control.textContent = label;
+            control.setAttribute("aria-label", label + " for " + item.dataset.asset);
+            control.addEventListener("click", async () => {
+                if (!widthInput.reportValidity()) return;
+                if (label === "Insert" && !upload.elements.indent.reportValidity()) return;
+                const name = item.dataset.asset;
+                const alt = name.replace(/\.[^.]+$/, "").replace(/-/g, " ");
+                const width = imageWidth();
+                const markdown = `![${alt}](assets/${name})` + (width ? `{width=${width}}` : "");
+                if (label === "Insert") {
+                    insertImages([markdown]);
+                    status.textContent = "Image inserted. Edit the alternative text if needed, then save.";
+                    return;
+                }
+                try {
+                    await navigator.clipboard.writeText(markdown);
+                    status.textContent = "Markdown copied.";
+                } catch {
+                    const fallback = document.createElement("input");
+                    fallback.readOnly = true;
+                    fallback.value = markdown;
+                    fallback.setAttribute("aria-label", "Image Markdown");
+                    status.replaceChildren("Copy the selected Markdown.", fallback);
+                    fallback.select();
+                }
+            });
+            item.append(control);
+        }
+    }
+
+    for (const item of library.children) addAssetActions(item);
+    document.querySelector("#open-image-drawer").addEventListener("click", () => {
+        drawer.open = true;
+        drawer.querySelector("summary").focus();
+    });
 
     function queueImages(files) {
         if (button.disabled) return;
+        drawer.open = true;
         const rejected = [];
         for (const file of files) {
             if (!/\.(png|jpe?g|gif|webp)$/i.test(file.name) || file.size > 8 * 1024 * 1024 || !file.size) {
@@ -260,8 +358,8 @@ if (upload) {
             status.textContent = "Choose at least one image.";
             return;
         }
-        const width = upload.elements.width.value;
-        const indentOverride = upload.elements.indent.value;
+        const width = imageWidth();
+        const indent = upload.elements.indent.value;
         const references = [];
         const failed = [];
         button.disabled = input.disabled = save.disabled = true;
@@ -278,35 +376,35 @@ if (upload) {
                         insert: "draft",
                         image: await readImage(file),
                     });
-                    const response = await fetch(upload.action, {method: "POST", body: form});
-                    if (!response.ok) throw new Error("Upload failed.");
-                    const {markdown} = await response.json();
+                    const response = await fetch(upload.action, {
+                        method: "POST", headers: {Accept: "text/plain"}, body: form,
+                    });
+                    if (!response.ok) {
+                        const reason = response.headers.get("Content-Type")?.startsWith("text/plain")
+                            ? await response.text() : "Upload failed.";
+                        throw new Error(reason);
+                    }
+                    const {markdown, name} = await response.json();
                     references.push(markdown);
+                    const item = document.createElement("li");
+                    item.dataset.asset = name;
+                    const filename = document.createElement("code");
+                    filename.textContent = name;
+                    item.append(filename);
+                    addAssetActions(item);
+                    library.append(item);
+                    upload.querySelector("#image-empty").hidden = true;
                     entries.delete(row);
                     row.remove();
-                } catch {
-                    failed.push(file.name);
+                } catch (error) {
+                    failed.push(file.name + " — " + error.message);
                 }
             }
             if (references.length) {
-                if (body.closest(".editor-source").hidden) {
-                    document.querySelector('#editor-modes [data-mode="write"]').click();
-                }
-                const position = body.selectionEnd;
-                const lineEnd = body.value.indexOf("\n", position);
-                const insertAt = lineEnd < 0 ? body.value.length : lineEnd;
-                const lineStart = position === 0 ? 0 : body.value.lastIndexOf("\n", position - 1) + 1;
-                const line = body.value.slice(lineStart, insertAt);
-                const marker = line.match(/^ *(?:[-+*]|\d{1,9}[.)]) +/);
-                const indent = " ".repeat(indentOverride === "" ? (marker?.[0].length ?? 0) : Number(indentOverride));
-                const images = references.map(reference => indent + reference).join("\n\n");
-                const prefix = insertAt ? "\n\n" : "";
-                body.setRangeText(prefix + images + "\n", insertAt, insertAt, "end");
-                body.focus();
-                body.dispatchEvent(new Event("input", {bubbles: true}));
+                insertImages(references, indent);
             }
             const inserted = references.length ? references.length + " image(s) inserted. Save the article. " : "";
-            status.textContent = inserted + (failed.length ? "Could not attach " + failed.join(", ") + ". Those files can be retried." : "");
+            status.textContent = inserted + (failed.length ? "Some images could not be attached. " + failed.join(" ") : "");
         } finally {
             button.disabled = input.disabled = save.disabled = false;
             for (const control of queue.querySelectorAll("input,button")) control.disabled = false;

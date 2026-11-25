@@ -70,10 +70,11 @@ class WorkflowTest(unittest.TestCase):
             def log_message(self, format, *args):
                 pass
 
-        def request(method, path, data=b"", *, binary=False):
+        def request(method, path, data=b"", *, binary=False, accept="*/*", status=200):
             raw = (
                 f"{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:8765\r\n"
                 f"Content-Length: {len(data)}\r\n"
+                f"Accept: {accept}\r\n"
                 "Content-Type: application/x-www-form-urlencoded\r\n\r\n"
             ).encode() + data
             handler = InMemoryHandler(
@@ -88,7 +89,7 @@ class WorkflowTest(unittest.TestCase):
                     if line.startswith("Location: ")
                 )
                 return request("GET", location)
-            self.assertTrue(headers.startswith("HTTP/1.0 200"), body)
+            self.assertTrue(headers.startswith(f"HTTP/1.0 {status} "), body)
             return (headers, body) if binary else body.decode()
 
         def get(path):
@@ -189,6 +190,8 @@ class WorkflowTest(unittest.TestCase):
                 alt="Example screen",
             )
         self.assertIn("New field procedure", get("/catalog?q=field-test"))
+        descending = get("/catalog?language=en-US&sort=number-desc")
+        self.assertLess(descending.index("FIELD-000005"), descending.index("FIELD-000001"))
         self.assertIn("New field procedure", get("/catalog?q=show+a+table"))
         self.assertNotIn("New field procedure", get("/catalog?q=unmatched"))
         published = get("/publish" + query)
@@ -223,6 +226,21 @@ class WorkflowTest(unittest.TestCase):
         )
         self.assertEqual(path.read_bytes(), saved)
         self.assertEqual((path.parent / "assets/draft.png").read_bytes(), image)
+        editor = get("/edit" + query)
+        self.assertIn('data-asset="draft.png"', editor)
+        self.assertIn('target="_blank" rel="noopener">View article', editor)
+        for width in ("200", "200px"):
+            pixel_preview = post("/preview" + query, body=f"![Draft](assets/draft.png){{width={width}}}")
+            self.assertIn('width="200"', pixel_preview)
+        invalid_body = "![Draft](assets/draft.png){width=bad}"
+        self.assertIn("<img", post("/preview" + query, body=invalid_body))
+        stale = request(
+            "POST", "/edit" + query,
+            urlencode({"_token": "test-token", "fingerprint": "stale", "body": invalid_body}).encode(),
+            accept="text/plain", status=400,
+        )
+        self.assertIn("The file changed since you opened it.", stale)
+        self.assertEqual(path.read_bytes(), saved)
         chinese = get("/publish?id=FIELD-000001&language=zh-CN")
         self.assertIn("处理会议室显示屏无信号的问题", chinese)
         self.assertRegex(chinese, re.compile(r'lang="zh-CN".*?修订版', re.S))
@@ -233,6 +251,15 @@ class WorkflowTest(unittest.TestCase):
     def test_registry_preserves_reserved_ids(self):
         self.assertEqual(self.repo.reserve_id(), "FIELD-000005")
         self.assertEqual(Repository(self.root).reserve_id(), "FIELD-000006")
+
+    def test_config_reports_path_and_trailing_comma(self):
+        config = self.root / "kbforge.yaml"
+        config.write_text('{\n  "languages": ["en-US"],\n}\n', encoding="utf-8")
+        with self.assertRaisesRegex(
+            ValueError, r"kbforge\.yaml:[23]:\d+: .*Remove the trailing comma"
+        ) as result:
+            Repository(self.root)
+        self.assertIn(str(config.resolve()), str(result.exception))
 
     def test_validation_identifies_bad_metadata_and_stale_translation(self):
         path = self.repo.article_path("FIELD-000001", "en-US")

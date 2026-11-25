@@ -1,5 +1,21 @@
 # Changelog · 更新日志
 
+## v0.9.0
+
+- Export all published editions as branded PDFs in one folder with `--export-pdfs`.
+- Sort the catalog by article number, title, last update, or next review.
+- Open saved articles in a new tab and keep drafts in the editor when a save fails.
+- Reuse images from the editor drawer and set widths in pixels or percentages.
+- Show configuration paths and syntax locations in startup errors, with a hint for trailing commas.
+
+### 简体中文
+
+- 使用 `--export-pdfs` 将所有已发布版本导出为带品牌样式的 PDF，并集中存放在一个文件夹中。
+- 目录支持按文章编号、标题、最近更新或下次复审日期排序。
+- 在新标签页中打开已保存的文章，保存失败时在编辑器中保留草稿。
+- 可从编辑器的图片面板复用图片，并用像素或百分比设置宽度。
+- 启动报错会显示配置文件路径和语法错误位置，并提示如何修复尾随逗号。
+
 ## v0.8.1
 
 - Match the HTML background colors for fenced text and blockquotes in PDFs.

@@ -199,11 +199,15 @@ def pdf_blocks(repo, path, blocks):
                     or not image.is_file()
                 ):
                     raise ValueError(f"Invalid local image: {reference}")
+                try:
+                    width = image_width(item["c"][0])
+                except ValueError as error:
+                    raise ValueError(f"{path.name}, image {reference}: {error}") from error
                 yield {
                     "kind": "image",
                     "text": inline(item["c"][1]),
                     "image": str(image),
-                    "width": image_width(item["c"][0]),
+                    "width": width,
                 }
             if inline(pending).strip():
                 yield {

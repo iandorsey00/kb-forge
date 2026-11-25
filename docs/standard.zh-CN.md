@@ -44,7 +44,7 @@
 {
   "metadata_fields": {
     "internal": {"type": "boolean", "label": "内部使用", "default": false},
-    "legacy_irl_id": {"type": "integer", "label": "旧版 IRL 编号"},
+    "legacy_id": {"type": "integer", "label": "旧版编号"},
     "audience": {"type": "string", "label": "适用读者"}
   }
 }
@@ -69,7 +69,7 @@
 
 将图片保存在文章的 `assets/` 目录下。名称可使用 ASCII 小写字母、数字和连字符，扩展名为 `.png`、`.jpg`、`.gif` 或 `.webp`。使用相对引用，例如 `![已选中 HDMI 1](assets/input-selector.png)`。用对应版本的语言填写替代文字，说明图片展示的内容。上传时保留图片的原始字节，文件名冲突时会加上数字后缀。简短的文件名便于阅读和迁移。
 
-可以在图片引用后紧接 Pandoc 图片宽度提示。KB Forge 接受 `1%` 至 `100%` 的整数百分比，以可用正文宽度为基准。HTML 和 PDF 均保留图片的宽高比。为适应页面高度，PDF 还可进一步缩小较高的图片。普通 GFM 查看器可能会将宽度提示作为图片旁的文字显示。
+可以在图片引用后紧接 Pandoc 图片宽度提示。可使用 `1%` 至 `100%` 的整数百分比，以可用正文宽度为基准，也可使用 `1px` 至 `10000px` 的像素宽度。`{width=200px}` 和 `{width=200}` 均表示 200 像素。HTML 和 PDF 均保留宽高比，且图片宽度不超过可用空间。PDF 中 96 像素等于 72 磅，较高的图片还可进一步缩小以适应页面。普通 GFM 查看器可能会将宽度提示作为图片旁的文字显示。
 
 ```markdown
 1. 选择输入源。

@@ -44,7 +44,7 @@ Add an optional top-level `metadata_fields` object to the collection's `kbforge.
 {
   "metadata_fields": {
     "internal": {"type": "boolean", "label": "Internal", "default": false},
-    "legacy_irl_id": {"type": "integer", "label": "Legacy IRL ID"},
+    "legacy_id": {"type": "integer", "label": "Legacy ID"},
     "audience": {"type": "string", "label": "Audience"}
   }
 }
@@ -69,7 +69,7 @@ Express applicability through `regions` and `countries`. A global article can us
 
 Store images under the article's `assets/` directory. Use lowercase ASCII letters and digits with optional hyphens, and a `.png`, `.jpg`, `.gif`, or `.webp` suffix. Write relative references such as `![HDMI 1 selected](assets/input-selector.png)`. Use alternative text to convey what the image shows in the language of the edition. The uploader keeps the image bytes and adds a numeric suffix if the filename is taken. Short names make paths easier to read and move.
 
-You can add a Pandoc image width hint immediately after the image reference. KB Forge accepts whole percentages from `1%` to `100%` of the available content width. Both HTML and PDF preserve proportions. The PDF can reduce a tall image further to fit the page. Plain GFM viewers may show the width hint as text beside the image.
+You can add a Pandoc image width hint immediately after the image reference. Use a whole percentage of the available width from `1%` to `100%`, or a pixel width from `1px` to `10000px`. Both `{width=200px}` and `{width=200}` mean 200 pixels. HTML and PDF preserve proportions and cap the width at the available space. In PDF, 96 pixels equal 72 points, and tall images can be scaled down further to fit the page. Plain GFM viewers may show the width hint as text beside the image.
 
 ```markdown
 1. Select the input.

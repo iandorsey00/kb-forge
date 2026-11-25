@@ -7,12 +7,43 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from kbforge.pdf import export_pdf, pdf_available
-from kbforge.publishing import export_html, render_body
+from kbforge.publishing import export_html, export_pdfs, render_body
 from kbforge.repository import Repository, load_article, save_article
 
 
 @unittest.skipUnless(pdf_available(), "Optional PDF dependencies are missing")
 class PublishingTest(unittest.TestCase):
+    def test_export_published_pdfs_to_flat_folder(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            collection = root / "collection"
+            shutil.copytree(Path(__file__).resolve().parents[1] / "example", collection)
+            repo = Repository(collection)
+            retired = repo.article_path("FIELD-000003", "zh-CN")
+            metadata, body = load_article(retired)
+            save_article(retired, {**metadata, "status": "retired"}, body)
+            output = root / "pdfs"
+            self.assertEqual(export_pdfs(repo, output), 3)
+            self.assertEqual(
+                {file.name for file in output.iterdir()},
+                {
+                    "FIELD-000001 [en-US] Restore a room display with no signal.pdf",
+                    "FIELD-000001 [zh-CN] 处理会议室显示屏无信号的问题.pdf",
+                    "FIELD-000002 North America loaner cable addendum.pdf",
+                },
+            )
+            self.assertTrue(all(file.read_bytes().startswith(b"%PDF-") for file in output.iterdir()))
+            with self.assertRaises(FileExistsError):
+                export_pdfs(repo, output)
+
+            article = repo.article_path("FIELD-000002", "en-US")
+            metadata, body = load_article(article)
+            save_article(article, {**metadata, "cover_pdf": "missing.pdf"}, body)
+            failed = root / "failed"
+            with self.assertRaisesRegex(ValueError, r"FIELD-000002 \(en-US\)"):
+                export_pdfs(repo, failed)
+            self.assertFalse(failed.exists())
+
     def test_task_markers_and_bundled_symbol_fallback(self):
         from pypdf import PdfReader
 
@@ -82,6 +113,13 @@ class PublishingTest(unittest.TestCase):
             html = render_body(repo, article, body)
             self.assertIn('style="width:40.0%"', html)
             self.assertIn("<blockquote>", html)
+
+            fixed_width = "## Steps\n\n![Selector](assets/input-selector.png){width=200}\n"
+            save_article(article, meta, fixed_width)
+            pdf = PdfReader(BytesIO(export_pdf(repo, article)))
+            operations = pdf.pages[2].get_contents().operations
+            image_index = max(index for index, (_, op) in enumerate(operations) if op == b"Do")
+            self.assertAlmostEqual(float(operations[image_index - 1][0][0]), 150, places=3)
 
             near_boundary = (
                 "## Steps\n\n"

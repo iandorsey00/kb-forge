@@ -328,8 +328,13 @@ def make_story(doc, blocks, depth):
                     available / image.imageWidth, 150 * doc.unit / image.imageHeight
                 )
             else:
+                requested = (
+                    available * int(width[:-1]) / 100
+                    if width.endswith("%")
+                    else int(width[:-2]) * 0.75
+                )
                 scale = min(
-                    available * width / 100 / image.imageWidth,
+                    min(available, requested) / image.imageWidth,
                     doc.pagesize[1] * 0.6 / image.imageHeight,
                 )
             image.drawWidth = image.imageWidth * scale

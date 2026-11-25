@@ -134,11 +134,19 @@ To change the workspace name shown in the app and exported site navigation, set 
 
 ### Work with many images
 
-Export the relevant pictures from the source presentation, or copy a screenshot to the clipboard. On the article edit page, select several files at once, drag them onto the editor or the **Images** panel, or paste a clipboard image into the editor. Check the alternative text for each. Under **Batch options**, set an optional **Width for this batch (%)**, then select **Insert images**. The references go below the current line in queue order. The files are stored immediately. Save the draft to keep the references.
+Export the relevant pictures from the source presentation, or copy a screenshot to the clipboard. On the article edit page, select several files at once, drag them onto the editor or the **Images** panel, or paste a clipboard image into the editor. Check the alternative text for each. In **Images**, you can set an optional width such as `200px` or `60%`, then select **Insert images**. Under **Attached files**, select **Insert** to reuse an existing image below the cursor line, or **Copy Markdown** to place it manually. The references go below the current line in queue order. The files are stored immediately. Save the draft to keep the references.
 
-Use **Write** for the full Markdown pane, **Split** to see the source and rendered content together, or **Preview** to read the rendered draft on its own. Article details, classification, and configured custom metadata are in collapsible panels. Press **Ctrl+S** on Windows or Linux, or **⌘S** on macOS, to save.
+Use **Write** for the full Markdown pane, **Split** to see the source and rendered content together, or **Preview** to read the rendered draft on its own. Article details, classification, and configured custom metadata are in collapsible panels. Press **Ctrl+S** on Windows or Linux, or **⌘S** on macOS, to save. **View article** opens the saved version in a new tab. Save errors appear in the editor so you can correct them without losing the draft. In **Catalog**, sort by title, article number, most recently updated, or next review date.
 
 For images that belong to a list item, place the cursor on the line with its list marker. KB Forge picks up the indentation. To override it, set **Indentation for list images** to the number of characters before the item text, counting the marker. For example, use 3 spaces for `1. Step` and 2 for `- Step`. Adjust individual widths afterward with `{width=60%}`. See the [Markdown example](docs/standard.md#images-links-and-branding). Validation can identify unreferenced assets if you abandon a draft.
+
+### Export published PDFs to a folder
+
+```sh
+python3 -m kbforge work-collection --export-pdfs --output published-pdfs
+```
+
+Install the PDF dependencies above and choose a new output folder. The command generates one branded PDF per published language edition. Drafts and retired articles are excluded. Files are named `<id> <title>.pdf`, or `<id> [<language>] <title>.pdf` when multiple editions of the same article are exported. You can share the finished folder through OneDrive or upload the PDFs to a SharePoint document library.
 
 ### Export a static site
 

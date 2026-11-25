@@ -157,13 +157,17 @@ def pandoc(markdown, output):
 
 
 def image_width(attributes):
-    """Read a portable image width as a percentage of the available line."""
+    """Read an image width as a normalized CSS percentage or pixel value."""
     width = dict(attributes[2]).get("width")
     if width is None:
         return None
-    if not re.fullmatch(r"(?:[1-9][0-9]?|100)%", width):
-        raise ValueError("Image width must be a whole percentage from 1% to 100%.")
-    return int(width[:-1])
+    if re.fullmatch(r"(?:[1-9][0-9]?|100)%", width):
+        return width
+    if re.fullmatch(r"(?:[1-9][0-9]{0,3}|10000)(?:px)?", width):
+        return width.removesuffix("px") + "px"
+    raise ValueError(
+        f"Invalid image width {width!r}. Use 1% to 100% or 1px to 10000px, for example 200px."
+    )
 
 
 def initialize_collection(root, name, prefix, digits, language):
@@ -206,9 +210,30 @@ def initialize_collection(root, name, prefix, digits, language):
 class Repository:
     def __init__(self, root):
         self.root = Path(root).resolve()
-        self.config = read_mapping(
-            self.path("kbforge.yaml").read_text(encoding="utf-8")
-        )
+        config_path = self.root / "kbforge.yaml"
+        try:
+            text = self.path("kbforge.yaml").read_text(encoding="utf-8")
+            self.config = read_mapping(text)
+            self.validate_config()
+        except json.JSONDecodeError as error:
+            before_closing_bracket = (
+                text[error.pos:error.pos + 1] in ("}", "]")
+                and text[:error.pos].rstrip().endswith(",")
+            )
+            hint = (
+                " Remove the trailing comma before the closing bracket."
+                if before_closing_bracket or "trailing comma" in error.msg.lower()
+                else ""
+            )
+            raise ValueError(
+                f"{config_path}:{error.lineno}:{error.colno}: {error.msg}.{hint}"
+            ) from error
+        except KeyError as error:
+            raise ValueError(f"{config_path}: Missing required setting {error}.") from error
+        except (OSError, ValueError, TypeError, AttributeError) as error:
+            raise ValueError(f"{config_path}: {error}") from error
+
+    def validate_config(self):
         self.custom_fields = custom_field_definitions(self.config)
         ids = self.config["identifiers"]
         if (

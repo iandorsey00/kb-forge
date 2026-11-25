@@ -1,6 +1,8 @@
 """Render portable articles with collection branding."""
 
 import base64
+from collections import Counter
+from contextlib import suppress
 import html
 from hashlib import file_digest, sha256
 from html.parser import HTMLParser
@@ -9,7 +11,9 @@ import mimetypes
 from pathlib import Path
 from posixpath import relpath
 import re
+import shutil
 import subprocess
+from unicodedata import normalize
 from urllib.parse import quote, unquote, urlencode, urlsplit
 
 from .pdf import IMAGE_SUFFIXES, export_pdf, pdf_available, pdf_filename, pdf_theme, theme_asset
@@ -97,7 +101,13 @@ def render_body(repo, path, body, link_for=article_url):
             )
         if kind in ("Image", "Link"):
             content = value["c"]
-            width = image_width(content[0]) if kind == "Image" else None
+            width = None
+            if kind == "Image":
+                try:
+                    width = image_width(content[0])
+                except ValueError:
+                    # Keep the article readable while Validation reports the bad width.
+                    pass
             try:
                 parts = urlsplit(content[-1][0])
                 relative = unquote(parts.path)
@@ -140,7 +150,7 @@ def render_body(repo, path, body, link_for=article_url):
                 return {"t": "Span", "c": [["", [], []], rewrite(content[1])]}
             rendered = rewrite(content)
             if width is not None:
-                rendered[0][2] = [["width", f"{width}%"]]
+                rendered[0][2] = [["width", width]]
             return {"t": kind, "c": rendered}
         return {key: rewrite(child) for key, child in value.items()}
 
@@ -243,9 +253,7 @@ def branded_article(repo, path, link_for=article_url):
 {related_html}{pictures["footer_image"]}</article>'''
 
 
-def site_editions(repo, include_pdfs, *, strict=False):
-    published = {}
-    assets = {}
+def published_articles(repo, *, strict=False):
     for path, metadata, body, error in repo.scan():
         if error and strict:
             raise ValueError(f"Cannot read {path.relative_to(repo.root)}: {error}")
@@ -253,6 +261,68 @@ def site_editions(repo, include_pdfs, *, strict=False):
             continue
         if repo.article_path(path.parent.name, path.stem) != path:
             raise ValueError(f"Invalid article location: {path.name}")
+        yield path, metadata, body
+
+
+def new_export_folder(repo, destination):
+    resolved = destination.resolve()
+    if resolved.is_relative_to(repo.root) and any(
+        resolved.is_relative_to(repo.path(folder).resolve())
+        for folder in ("articles", "registry", "branding")
+    ):
+        raise ValueError("Choose an output folder outside the collection's source folders.")
+    destination.mkdir()
+
+
+def export_pdfs(repo, destination):
+    """Write a flat folder of branded PDFs for published editions."""
+    if not pdf_available():
+        raise ValueError("Install PDF support with python -m pip install -r requirements-pdf.txt.")
+    editions = list(published_articles(repo, strict=True))
+    if not editions:
+        raise ValueError("There are no published articles to export.")
+    counts = Counter(path.parent.name for path, _, _ in editions)
+    planned = {}
+    filenames = set()
+    for path, metadata, body in editions:
+        article_id = path.parent.name
+        title = metadata.get("title") or article_id
+        if counts[article_id] > 1:
+            title = f"[{path.stem}] {title}"
+        name = pdf_filename(article_id, title)
+        folded = normalize("NFC", name).casefold()
+        if folded in filenames:
+            raise ValueError(f"Multiple editions would export to {name}. Check their IDs and languages.")
+        filenames.add(folded)
+        planned[name] = (path, (metadata, body))
+    new_export_folder(repo, destination)
+    created = []
+    try:
+        for name, (path, article) in planned.items():
+            try:
+                data = export_pdf(repo, path, article=article)
+                output = destination / name
+                with output.open("xb") as stream:
+                    created.append(output)
+                    stream.write(data)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                raise ValueError(
+                    f"Could not export PDF for {path.parent.name} ({path.stem}): {error}"
+                ) from error
+    except BaseException:
+        for output in created:
+            with suppress(OSError):
+                output.unlink()
+        with suppress(OSError):
+            destination.rmdir()
+        raise
+    return len(planned)
+
+
+def site_editions(repo, include_pdfs, *, strict=False):
+    published = {}
+    assets = {}
+    for path, metadata, body in published_articles(repo, strict=strict):
         if path.parent not in assets:
             asset_folder = repo.path("articles", path.parent.name, "assets")
             fingerprints = []
@@ -296,7 +366,6 @@ def site_editions(repo, include_pdfs, *, strict=False):
 
 def export_html(repo, destination, *, include_pdfs=True, release=None, published=None):
     """Build a portable site with relative links to articles and their PDFs."""
-    import shutil
 
     if published is None:
         published = site_editions(repo, include_pdfs)
@@ -351,14 +420,7 @@ def export_html(repo, destination, *, include_pdfs=True, release=None, published
             "Install PDF support with python -m pip install -r requirements-pdf.txt "
             "or use --html-only."
         )
-    if destination.resolve().is_relative_to(repo.root) and any(
-        destination.resolve().is_relative_to(repo.path(folder).resolve())
-        for folder in ("articles", "registry", "branding")
-    ):
-        raise ValueError(
-            "Choose an output folder outside the collection's source folders."
-        )
-    destination.mkdir()
+    new_export_folder(repo, destination)
     try:
         (destination / "style.css").write_bytes(
             Path(__file__).with_name("style.css").read_bytes()
