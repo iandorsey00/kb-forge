@@ -30,6 +30,9 @@ button,.button { padding:.55rem .9rem; display:inline-block; border:1px solid va
 table { border-collapse:collapse; width:100%; }
 th,td { padding:.65rem; text-align:left; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
 th { background:#eaf1ed; }
+.catalog-results :is(th, .catalog-token) { white-space:nowrap; }
+.catalog-results td { overflow-wrap:break-word; }
+.catalog-article { min-width:16rem; overflow-wrap:anywhere; }
 code,pre { background:#edf2ef; overflow-wrap:anywhere; }
 pre { padding:.8rem; white-space:pre-wrap; }
 .publication { padding:clamp(1.1rem,5vw,3.8rem); }

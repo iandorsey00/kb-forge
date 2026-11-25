@@ -80,14 +80,15 @@ def field(name, label, value="", kind="text", required=False, *, form_id=""):
     )
 
 
-def table(headers, rows):
+def table(headers, rows, *, scroll_label=""):
     if not rows:
         return '<p class="muted">No results.</p>'
     head = "".join(f"<th>{esc(label)}</th>" for label in headers)
     body = "".join(
         "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows
     )
-    return f'<div class="table-wrap"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
+    region = f' role="region" aria-label="{esc(scroll_label)}" tabindex="0"' if scroll_label else ""
+    return f'<div class="table-wrap"{region}><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
 
 
 def catalog_rows(repo):
@@ -428,9 +429,10 @@ class Handler(BaseHTTPRequestHandler):
         headers = ["Article", "Language", "Type", "Owner", "Status", "Review date", "Updated"]
         rendered_rows = [
             [
-                f'<a href="{esc(article_url(path))}">{esc(meta.get("title", path.stem))}</a><br><small>{esc(path.parent.name)}</small>',
+                f'<div class="catalog-article"><a href="{esc(article_url(path))}">{esc(meta.get("title", path.stem))}</a><br><small>{esc(path.parent.name)}</small></div>',
                 *[
-                    esc(meta.get(key, ""))
+                    esc(meta.get(key, "")) if key == "owner"
+                    else f'<span class="catalog-token">{esc(meta.get(key, ""))}</span>'
                     for key in ("language", "type", "owner", "status", "review_on", "updated_on")
                 ],
             ]
@@ -464,7 +466,8 @@ class Handler(BaseHTTPRequestHandler):
         self.page(
             "Article catalog",
             f"""<h1>Article catalog</h1><form><div class="grid">{filters}</div>
-<button>Search</button></form>{table(headers, rendered_rows)}""",
+<button>Search</button></form>
+<div class="catalog-results">{table(headers, rendered_rows, scroll_label="Catalog results")}</div>""",
         )
 
     def standard_metadata_fields(self, metadata, names, *, form_id=""):

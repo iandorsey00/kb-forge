@@ -1,5 +1,13 @@
 # Changelog · 更新日志
 
+## v0.9.1
+
+- Give catalog titles more room, keep short column values on one line, and make the table scroll horizontally on narrow screens.
+
+### 简体中文
+
+- 为目录中的文章标题留出更多空间，避免较短的字段值换行，并支持在窄屏上横向滚动表格。
+
 ## v0.9.0
 
 - Export all published editions as branded PDFs in one folder with `--export-pdfs`.
