@@ -45,6 +45,8 @@ Run repository validation without the browser with `python3 -m kbforge demo-work
 
 ## Reference
 
+See the [architecture and implementation priorities](docs/architecture.md) for design decisions, current limits, and the order of planned improvements.
+
 Read the [KB Forge Documentation Standard](docs/standard.md) for file layout, metadata, lifecycle, translation and migration. The [demo collection](example/kbforge.yaml) shows the identifier format, article templates and organization branding.
 
 Use [custom metadata fields](docs/standard.md#custom-metadata-fields) to add typed fields with optional defaults to the article editor.
@@ -132,13 +134,21 @@ Article IDs, internal links, and branding stay intact. Update any shortcuts, lau
 
 To change the workspace name shown in the app and exported site navigation, set `workspace.name` in `kbforge.yaml`, restart KB Forge, and regenerate the site. To change the organization label inside published articles, set `branding.name` and regenerate the outputs.
 
+### Recover unsaved edits and review findings
+
+The editor keeps recovery copies of changed Markdown and form fields in the current browser. Reopen the same edition using the same collection path, browser profile, and KB Forge address (including its port). Under **Recover unsaved edits**, choose a copy and select **Restore in editor**. If the saved edition or its fields have changed, use **Review draft contents** to copy the changes you want to keep. Only **Save changes** writes the Markdown article.
+
+Recovery copies are separate from collection backups and exports. Clearing site data can remove them. If the browser cannot store a copy, the editor shows a message. Save your edits or copy them to a safe location before closing the page.
+
+In **Validation**, filter by severity and use **Edit article** to open a readable edition. Links and related-article references to retired material are flagged for review. Findings in files that cannot be opened in the editor show their collection-relative paths.
+
 ### Work with many images
 
 Export the relevant pictures from the source presentation, or copy a screenshot to the clipboard. On the article edit page, select several files at once, drag them onto the editor or the **Images** panel, or paste a clipboard image into the editor. Check the alternative text for each. In **Images**, you can set an optional width such as `200px` or `60%`, then select **Insert images**. Under **Attached files**, select **Insert** to reuse an existing image below the cursor line, or **Copy Markdown** to place it manually. The references go below the current line in queue order. The files are stored immediately. Save the draft to keep the references.
 
 Use **Write** for the full Markdown pane, **Split** to see the source and rendered content together, or **Preview** to read the rendered draft on its own. Article details, classification, and configured custom metadata are in collapsible panels. Press **Ctrl+S** on Windows or Linux, or **⌘S** on macOS, to save. **View article** opens the saved version in a new tab. Save errors appear in the editor so you can correct them without losing the draft. In **Catalog**, sort by title, article number, most recently updated, or next review date.
 
-For images that belong to a list item, place the cursor on the line with its list marker. KB Forge picks up the indentation. To override it, set **Indentation for list images** to the number of characters before the item text, counting the marker. For example, use 3 spaces for `1. Step` and 2 for `- Step`. Adjust individual widths afterward with `{width=60%}`. See the [Markdown example](docs/standard.md#images-links-and-branding). Validation can identify unreferenced assets if you abandon a draft.
+For images that belong to a list item, place the cursor on the line with its list marker. KB Forge picks up the indentation. To override it, set **Indentation for list images** to the number of characters before the item text, counting the marker. For example, use 3 spaces for `1. Step` and 2 for `- Step`. For an existing attachment, enter **Alternative text for reused image** and set **Image width**, then choose **Insert**. You can also adjust a width in Markdown with `{width=60%}`. See the [Markdown example](docs/standard.md#images-links-and-branding). Validation can identify unreferenced assets if you abandon a draft.
 
 ### Export published PDFs to a folder
 

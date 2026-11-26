@@ -40,6 +40,7 @@ from .repository import (
     initialize_collection,
     image_width,
     load_article,
+    parse_article,
     save_article,
 )
 
@@ -133,6 +134,7 @@ class Handler(BaseHTTPRequestHandler):
         update_label = self.update_label()
         available = ' class="update-available"' if update_label == "Update app…" else ""
         layout = ' class="editor-page"' if editor else ""
+        recovery_script = '<script src="/editor-recovery.js" defer></script>' if editor else ""
         self.send_content(
             f"""<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -144,7 +146,7 @@ class Handler(BaseHTTPRequestHandler):
 <form class="workspace-search" action="/catalog" role="search">
 <input type="search" name="q" aria-label="Search articles" placeholder="Search articles">
 <button>Search</button></form></nav>
-<main{layout}>{body}</main><script src="/app.js" defer></script></body></html>""",
+<main{layout}>{body}</main>{recovery_script}<script src="/app.js" defer></script></body></html>""",
             status,
         )
 
@@ -230,6 +232,10 @@ class Handler(BaseHTTPRequestHandler):
                 ),
                 ("GET", "/app.js"): lambda _: self.send_content(
                     STYLE.with_name("app.js").read_bytes(),
+                    content_type="text/javascript",
+                ),
+                ("GET", "/editor-recovery.js"): lambda _: self.send_content(
+                    STYLE.with_name("editor-recovery.js").read_bytes(),
                     content_type="text/javascript",
                 ),
             }.get((method, target.path))
@@ -492,10 +498,13 @@ class Handler(BaseHTTPRequestHandler):
         return "".join(fields)
 
     def related_field(self, metadata, *, form_id=""):
+        related = metadata.get("related") or []
+        if isinstance(related, list):
+            related = ", ".join(map(str, related))
         return field(
             "related",
             "Related article IDs (comma separated)",
-            ", ".join(map(str, metadata.get("related", []))),
+            related,
             form_id=form_id,
         )
 
@@ -673,8 +682,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def edit_form(self, values):
         path = self.path_from(values)
-        fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
-        metadata, body = load_article(path)
+        data = path.read_bytes()
+        fingerprint = hashlib.sha256(data).hexdigest()
+        metadata, body = parse_article(data.decode("utf-8"))
+        draft_key = hashlib.sha256(str(path).encode("utf-8")).hexdigest()
         form_id = "article-editor"
         status = select(
             "status",
@@ -732,9 +743,22 @@ class Handler(BaseHTTPRequestHandler):
 <button id="editor-save" type="submit" form="{form_id}">Save changes</button>
 </div></header>
 <p id="editor-save-error" role="alert" hidden></p>
+<p id="recovery-storage-status" class="muted" role="status" hidden></p>
+<section class="editor-card editor-recovery" id="editor-recovery" aria-labelledby="recovery-title" hidden>
+<h2 id="recovery-title">Recover unsaved edits</h2>
+<label>Saved draft <select id="recovery-drafts"></select></label>
+<p id="recovery-note" role="status"></p>
+<div class="actions">
+<button type="button" id="recovery-restore">Restore in editor</button>
+<button type="button" class="button secondary" id="recovery-discard">Discard this copy</button>
+</div>
+<details id="recovery-review" hidden><summary>Review draft contents</summary>
+<label>Draft Markdown<textarea id="recovery-body" readonly></textarea></label>
+<dl id="recovery-fields"></dl></details>
+</section>
 <div class="editor-layout">
 <form id="{form_id}" method="post" action="{esc(article_url(path, "edit"))}"
-data-preview="{esc(article_url(path, "preview"))}">
+data-preview="{esc(article_url(path, "preview"))}" data-draft-key="{draft_key}">
 {self.form_token()}<input type="hidden" name="fingerprint" value="{fingerprint}">
 <section class="editor-card editor-composer" aria-labelledby="editor-content-title">
 <div class="editor-card-header">
@@ -757,7 +781,8 @@ data-preview="{esc(article_url(path, "preview"))}">
 <div class="editor-panes" data-mode="write">
 <div class="editor-source">
 <label for="article-markdown">Markdown</label>
-<textarea id="article-markdown" name="body" spellcheck="true">{esc(body.strip())}</textarea>
+<textarea id="article-markdown" name="body" spellcheck="true">
+{esc(body.removeprefix(chr(10)))}</textarea>
 </div>
 <section class="editor-preview" aria-labelledby="editor-preview-title" hidden>
 <h3 id="editor-preview-title">Preview</h3>
@@ -788,6 +813,8 @@ data-preview="{esc(article_url(path, "preview"))}">
 <noscript><p>Enable JavaScript to attach images through this form.</p></noscript>
 <div class="editor-assets"><h3>Attached files</h3>
 <p id="image-empty" class="editor-help"{' hidden' if assets else ''}>No images attached yet.</p>
+<label id="reuse-alt-label"{'' if assets else ' hidden'}>Alternative text for reused image
+<input name="reuse_alt" placeholder="Describe what the image shows"></label>
 <ul id="image-library">{assets}</ul></div></form></details>
 </aside></div>''',
             editor=True,
@@ -803,13 +830,14 @@ data-preview="{esc(article_url(path, "preview"))}">
         """Reject stale editor tabs so a save cannot silently overwrite a newer edit."""
         path = self.path_from(values)
         with self.server.write_lock:
-            if hashlib.sha256(path.read_bytes()).hexdigest() != values.get(
+            data = path.read_bytes()
+            if hashlib.sha256(data).hexdigest() != values.get(
                 "fingerprint"
             ):
                 raise ValueError(
-                    "The file changed since you opened it. Copy your draft, then reload the editor."
+                    "The file changed since you opened it. Reload the editor to review your recovery copy against the saved edition."
                 )
-            metadata, body = load_article(path)
+            metadata, body = parse_article(data.decode("utf-8"))
             updates = self.submitted_metadata(values)
             if (
                 values.get("status") not in STATUSES
@@ -827,8 +855,10 @@ data-preview="{esc(article_url(path, "preview"))}">
                         "Choose a source revision from 1 through the current source revision."
                     )
                 updates["source_revision"] = revision
-            new_body = values.get("body", "")
-            changed = body.strip() != new_body.strip() or any(
+            new_body = values.get("body", "").replace("\r\n", "\n").replace("\r", "\n")
+            if body.startswith("\n"):
+                new_body = "\n" + new_body
+            changed = body != new_body or any(
                 metadata.get(key) != value for key, value in updates.items()
             )
             for name, value in self.submitted_custom_metadata(values).items():
@@ -845,7 +875,7 @@ data-preview="{esc(article_url(path, "preview"))}">
             if changed:
                 updates["revision"] = metadata["revision"] + 1
                 updates["updated_on"] = date.today().isoformat()
-                save_article(path, {**metadata, **updates}, new_body)
+                save_article(path, {**metadata, **updates}, new_body, raw_body=True)
         location = article_url(path)
         if self.headers.get("Accept") == "text/plain":
             self.send_content(location, content_type=PLAIN_TEXT)
@@ -886,20 +916,52 @@ data-preview="{esc(article_url(path, "preview"))}">
                     revision=metadata["revision"] + 1,
                     updated_on=date.today().isoformat(),
                 )
-                save_article(path, metadata, body.rstrip() + f"\n\n{markdown}")
+                separator = "" if body.endswith("\n\n") else "\n" if body.endswith("\n") else "\n\n"
+                save_article(path, metadata, body + separator + markdown + "\n", raw_body=True)
             except (OSError, KeyError, TypeError):
                 (path.parent / relative).unlink(missing_ok=True)
                 raise
         self.redirect(article_url(path, "edit"))
 
-    def validation(self, _):
-        rows = [[esc(value) for value in finding] for finding in self.repo.validate()]
-        content = (
-            table(["Severity", "File", "Suggested correction"], rows)
-            if rows
-            else "<p>No findings.</p>"
+    def validation(self, values):
+        levels = ("Error", "Warning", "Info")
+        severity = values.get("severity", "")
+        if severity not in levels:
+            severity = ""
+        findings = sorted(self.repo.validate(), key=lambda finding: (levels.index(finding[0]), finding[1]))
+        counts = {level: 0 for level in levels}
+        rows = []
+        edit_links = {}
+        for level, relative, message in findings:
+            counts[level] += 1
+            if severity and level != severity:
+                continue
+            if relative not in edit_links:
+                parts = Path(relative).parts
+                link = ""
+                if len(parts) == 3 and parts[0] == "articles" and parts[2].endswith(".md"):
+                    try:
+                        path = self.repo.article_path(parts[1], Path(parts[2]).stem)
+                        load_article(path)
+                        link = f'<a href="{esc(article_url(path, "edit"))}">Edit article</a>'
+                    except (OSError, ValueError):
+                        pass
+                edit_links[relative] = link
+            rows.append([esc(level), esc(relative), esc(message), edit_links[relative]])
+        severity_filter = select(
+            "severity", "Severity", [(level, f"{level} ({counts[level]})") for level in levels],
+            severity, "All findings",
         )
-        self.page("Validation", f"<h1>Validation</h1>{content}")
+        content = (
+            table(["Severity", "File", "Suggested correction", "Action"], rows)
+            if rows
+            else "<p>No matching findings.</p>" if findings else "<p>No findings.</p>"
+        )
+        self.page(
+            "Validation",
+            f'<h1>Validation</h1><form class="validation-filter">{severity_filter}'
+            f'<button type="submit">Apply filter</button></form>{content}',
+        )
 
     def pdf(self, values):
         path = self.path_from(values)

@@ -1,5 +1,19 @@
 # Changelog · 更新日志
 
+## v0.10.0
+
+- Keep browser-local recovery copies of unsaved Markdown and metadata. Review older copies when the saved edition has changed.
+- Preserve Markdown whitespace when saving or renumbering an article.
+- Filter validation findings by severity, open affected articles directly, and flag references to retired editions.
+- Set alternative text and width before inserting an existing attachment.
+
+### 简体中文
+
+- 在浏览器中保留未保存的 Markdown 和元数据恢复副本。已保存版本发生变化时，可查看旧副本。
+- 保存文章或重新编号时保留 Markdown 空白。
+- 按严重程度筛选校验结果，直接打开受影响的文章，并提示复审指向已停用版本的引用。
+- 插入已有附件之前，可设置替代文字和宽度。
+
 ## v0.9.1
 
 - Give catalog titles more room, keep short column values on one line, and make the table scroll horizontally on narrow screens.

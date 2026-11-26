@@ -109,7 +109,7 @@ def renumber(repo, old, new, *, force=False, remember_previous=True):
             moved = True
             for path, (metadata, body) in changes.items():
                 target = destination / path.name if path.parent == source else path
-                save_article(target, metadata, body)
+                save_article(target, metadata, body, raw_body=True)
                 written.append(path)
             write_json(registry, {**reserved, new: date.today().isoformat()})
         except (OSError, ValueError, KeyboardInterrupt):

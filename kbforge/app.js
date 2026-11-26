@@ -34,6 +34,7 @@ if (editor) {
     const saveError = document.querySelector("#editor-save-error");
     const layout = editor.closest(".editor-layout");
     const lineCount = document.querySelector("#editor-line-count");
+    const recovery = setupDraftRecovery(editor);
     let dirty = false;
     let timer;
     let pending;
@@ -145,6 +146,7 @@ if (editor) {
 
     document.addEventListener("input", event => {
         if (event.target.form !== editor) return;
+        recovery.changed();
         if (!dirty) {
             dirty = true;
             saveState.textContent = "Unsaved changes";
@@ -171,6 +173,7 @@ if (editor) {
     editor.addEventListener("submit", async event => {
         event.preventDefault();
         if (save.disabled) return;
+        recovery.checkpoint();
         const draft = new URLSearchParams(new FormData(editor));
         saveError.hidden = true;
         save.disabled = layout.inert = true;
@@ -187,6 +190,7 @@ if (editor) {
                 return;
             }
             dirty = false;
+            recovery.saved();
             window.location.assign(message);
         } catch {
             saveError.textContent = "Could not reach KB Forge. Your draft is still in the editor.";
@@ -199,6 +203,7 @@ if (editor) {
 
     window.addEventListener("beforeunload", event => {
         if (dirty) {
+            recovery.checkpoint();
             event.preventDefault();
             event.returnValue = "";
         }
@@ -252,7 +257,9 @@ if (upload) {
                 if (!widthInput.reportValidity()) return;
                 if (label === "Insert" && !upload.elements.indent.reportValidity()) return;
                 const name = item.dataset.asset;
-                const alt = name.replace(/\.[^.]+$/, "").replace(/-/g, " ");
+                const description = upload.elements.reuse_alt.value.trim()
+                    || name.replace(/\.[^.]+$/, "").replace(/-/g, " ");
+                const alt = description.replace(/[\\[\]]/g, "\\$&");
                 const width = imageWidth();
                 const markdown = `![${alt}](assets/${name})` + (width ? `{width=${width}}` : "");
                 if (label === "Insert") {
@@ -394,6 +401,7 @@ if (upload) {
                     addAssetActions(item);
                     library.append(item);
                     upload.querySelector("#image-empty").hidden = true;
+                    upload.querySelector("#reuse-alt-label").hidden = false;
                     entries.delete(row);
                     row.remove();
                 } catch (error) {

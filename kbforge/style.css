@@ -33,6 +33,8 @@ th { background:#eaf1ed; }
 .catalog-results :is(th, .catalog-token) { white-space:nowrap; }
 .catalog-results td { overflow-wrap:break-word; }
 .catalog-article { min-width:16rem; overflow-wrap:anywhere; }
+.validation-filter { display:flex; flex-wrap:wrap; align-items:end; gap:.6rem; }
+.validation-filter select { margin-bottom:0; }
 code,pre { background:#edf2ef; overflow-wrap:anywhere; }
 pre { padding:.8rem; white-space:pre-wrap; }
 .publication { padding:clamp(1.1rem,5vw,3.8rem); }
@@ -178,6 +180,12 @@ pre { padding:.8rem; white-space:pre-wrap; }
 .editor-card { background:var(--editor-surface); border:1px solid var(--editor-edge); border-radius:var(--editor-radius); box-shadow:0 2px 7px #16352d08; min-width:0; }
 .editor-card-header { display:flex; align-items:center; justify-content:space-between; gap:.55rem; padding:.8rem 1rem; }
 .editor-card h2 { margin:0; font-size:1rem; }
+.editor-recovery { padding:1rem; margin-bottom:1rem; }
+.editor-recovery label { margin-top:.65rem; }
+.editor-recovery select { width:min(100%, 26rem); }
+.editor-recovery dl { margin:0; }
+.editor-recovery dt { font-weight:600; }
+.editor-recovery dd { margin:0 0 .5rem; white-space:pre-wrap; overflow-wrap:anywhere; }
 .editor-modes { display:flex; gap:.17rem; background:var(--editor-tint); padding:.18rem; border:1px solid var(--editor-edge); border-radius:8px; }
 .editor-modes button, .editor-tools button {
   background:transparent; color:var(--muted); border:1px solid transparent;

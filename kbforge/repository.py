@@ -121,17 +121,25 @@ def article_author(metadata):
 
 
 def load_article(path):
+    return parse_article(path.read_text(encoding="utf-8"))
+
+
+def parse_article(text):
     first, metadata, body = re.split(
-        r"(?m)^---[ \t]*\n", path.read_text(encoding="utf-8"), maxsplit=2
+        r"(?m)^---[ \t]*\n", text.replace("\r\n", "\n").replace("\r", "\n"), maxsplit=2
     )
     if first:
         raise ValueError("Expected YAML front matter at the start of the file.")
     return read_mapping(metadata), body
 
 
-def save_article(path, metadata, body):
+def save_article(path, metadata, body, *, raw_body=False):
     front_matter = json.dumps(metadata, ensure_ascii=False, indent=2)
-    atomic_text(path, f"---\n{front_matter}\n---\n\n{body.strip()}\n")
+    if not raw_body:
+        body = "\n" + body
+        if not body.endswith("\n"):
+            body += "\n"
+    atomic_text(path, f"---\n{front_matter}\n---\n{body}")
 
 
 def pandoc(markdown, output):
@@ -449,6 +457,10 @@ class Repository:
             if isinstance(article_id, str) and isinstance(language, str):
                 editions[(article_id, language)] += 1
 
+        active_ids = {
+            article_id for (article_id, _), metadata in by_location.items()
+            if metadata.get("status") != "retired"
+        }
         for path, metadata, body, error in articles:
             if error or (only_id is not None and path.parent.name != only_id):
                 continue
@@ -581,6 +593,8 @@ class Repository:
                             path,
                             f"Replace invalid related article ID: {target}",
                         )
+                    elif target not in active_ids and metadata.get("status") != "retired":
+                        report("Warning", path, f"Review the related article {target}. All of its editions are retired.")
             article_type = metadata.get("type")
             template = (
                 self.templates.get(article_type)
@@ -651,6 +665,13 @@ class Repository:
                             )
                         if not content[1]:
                             report("Warning", path, f"Add alternative text for {url}.")
+                    elif (
+                        metadata.get("status") != "retired"
+                        and candidate.parent.parent == self.path("articles").resolve()
+                        and candidate.suffix == ".md"
+                        and by_location.get((candidate.parent.name, candidate.stem), {}).get("status") == "retired"
+                    ):
+                        report("Warning", path, f"Review the link to a retired edition: {url}")
                 except (ValueError, OSError) as failure:
                     report("Error", path, f"Invalid reference {url}: {failure}")
 

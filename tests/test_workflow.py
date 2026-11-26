@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 from io import BytesIO
 from pathlib import Path
@@ -138,6 +139,8 @@ class WorkflowTest(unittest.TestCase):
         save_article(path, metadata, body)
         query = "?id=FIELD-000005&language=en-US"
         editor = get("/edit" + query)
+        self.assertIn('src="/editor-recovery.js"', editor)
+        self.assertRegex(editor, r'data-draft-key="[a-f0-9]{64}"')
         self.assertIn('name="custom.audience" type="text" value="Field technicians" form="article-editor"', editor)
         saved = path.read_bytes()
         preview = post(
@@ -241,12 +244,52 @@ class WorkflowTest(unittest.TestCase):
         )
         self.assertIn("The file changed since you opened it.", stale)
         self.assertEqual(path.read_bytes(), saved)
+        significant = "\n\n    Leading indented code\n\nA line with two spaces  \nAnother line\n"
+        metadata, _ = load_article(path)
+        save_article(path, metadata, significant, raw_body=True)
+        fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
+        raw = request(
+            "POST", "/edit" + query,
+            urlencode({
+                "_token": "test-token", "fingerprint": fingerprint,
+                "title": "Renamed field procedure", "owner": metadata["owner"],
+                "type": metadata["type"], "status": metadata["status"],
+                "tags": "field-test", "review_on": metadata["review_on"],
+                "body": significant.removeprefix("\n").replace("\n", "\r\n"),
+            }).encode(),
+            accept="text/plain",
+        )
+        self.assertTrue(raw.startswith("/article?"))
+        self.assertEqual(load_article(path)[1], significant)
         chinese = get("/publish?id=FIELD-000001&language=zh-CN")
         self.assertIn("处理会议室显示屏无信号的问题", chinese)
         self.assertRegex(chinese, re.compile(r'lang="zh-CN".*?修订版', re.S))
         server.restart_required = True
         self.assertEqual(get("/update-status"), "Restart app")
         self.assertIn("Restart required", get("/updates"))
+
+    def test_validation_points_to_retired_editions_and_articles(self):
+        source = self.repo.article_path("FIELD-000001", "en-US")
+        retired = self.repo.article_path("FIELD-000002", "en-US")
+        metadata, body = load_article(retired)
+        save_article(retired, {**metadata, "status": "retired"}, body, raw_body=True)
+        metadata, body = load_article(source)
+        save_article(
+            source, {**metadata, "related": [retired.parent.name]},
+            body + "\n[Former procedure](../FIELD-000002/en-US.md)\n",
+            raw_body=True,
+        )
+        findings = self.repo.validate(only_id=source.parent.name)
+        self.assertIn(
+            ("Warning", "articles/FIELD-000001/en-US.md",
+             "Review the link to a retired edition: ../FIELD-000002/en-US.md"),
+            findings,
+        )
+        self.assertIn(
+            ("Warning", "articles/FIELD-000001/en-US.md",
+             "Review the related article FIELD-000002. All of its editions are retired."),
+            findings,
+        )
 
     def test_registry_preserves_reserved_ids(self):
         self.assertEqual(self.repo.reserve_id(), "FIELD-000005")
